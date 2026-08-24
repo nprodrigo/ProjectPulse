@@ -32,7 +32,7 @@ function getDBConnection() {
         $dbHost = 'localhost';
         $dbPort = '3306';
         $dbName = 'learnitc_pm_dashboard';
-        $dbUser = 'learnitc_pm_user';
+        $dbUser = 'learnitc_niroshan';
         $dbPass = 'yXQmf2ShlyEUHnqY'; // Replace with your actual cloud DB password
     }
 

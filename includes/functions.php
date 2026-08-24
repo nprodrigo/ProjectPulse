@@ -423,3 +423,188 @@ function getProjectTasks($projectId) {
         return [];
     }
 }
+
+/**
+ * Calculate Timeline Schedule Variance (Days Delayed / Ahead)
+ */
+function getScheduleVariance($originalDate, $currentDate) {
+    if (!$originalDate || !$currentDate) {
+        return ['days' => 0, 'status' => 'On Time', 'class' => 'bg-success-lt'];
+    }
+    
+    $origTS = strtotime($originalDate);
+    $currTS = strtotime($currentDate);
+    $diffDays = (int)round(($currTS - $origTS) / 86400);
+
+    if ($diffDays > 0) {
+        return ['days' => $diffDays, 'status' => "+{$diffDays} Days Delayed", 'class' => 'bg-danger-lt'];
+    } elseif ($diffDays < 0) {
+        $ahead = abs($diffDays);
+        return ['days' => $diffDays, 'status' => "-{$ahead} Days Ahead", 'class' => 'bg-success-lt'];
+    }
+    return ['days' => 0, 'status' => 'On Schedule', 'class' => 'bg-info-lt'];
+}
+
+/**
+ * Fetch RACI Matrix for a Task or Module
+ */
+function getRaciAssignments($entityType, $entityId) {
+    $db = getDBConnection();
+    if (!$db) return ['R' => [], 'A' => [], 'C' => [], 'I' => []];
+
+    $sql = "SELECT rm.raci_role, tm.id, tm.full_name, tm.role_title 
+            FROM raci_matrix rm
+            JOIN team_members tm ON rm.member_id = tm.id
+            WHERE rm.entity_type = :type AND rm.entity_id = :id";
+    
+    try {
+        $stmt = $db->prepare($sql);
+        $stmt->execute(['type' => $entityType, 'id' => $entityId]);
+        $rows = $stmt->fetchAll();
+
+        $raci = ['R' => [], 'A' => [], 'C' => [], 'I' => []];
+        foreach ($rows as $row) {
+            $raci[$row['raci_role']][] = $row;
+        }
+        return $raci;
+    } catch (PDOException $e) {
+        return ['R' => [], 'A' => [], 'C' => [], 'I' => []];
+    }
+}
+
+/**
+ * Save RACI Matrix Roles for an Entity
+ */
+function saveRaciRoles($entityType, $entityId, $raciData) {
+    $db = getDBConnection();
+    if (!$db) return;
+
+    try {
+        $stmtDelete = $db->prepare("DELETE FROM raci_matrix WHERE entity_type = :type AND entity_id = :id");
+        $stmtDelete->execute(['type' => $entityType, 'id' => $entityId]);
+
+        $stmtInsert = $db->prepare("INSERT INTO raci_matrix (entity_type, entity_id, member_id, raci_role) VALUES (:type, :id, :mid, :role)");
+        
+        foreach (['R', 'A', 'C', 'I'] as $role) {
+            if (!empty($raciData[$role])) {
+                foreach ($raciData[$role] as $memberId) {
+                    $stmtInsert->execute(['type' => $entityType, 'id' => $entityId, 'mid' => (int)$memberId, 'role' => $role]);
+                }
+            }
+        }
+    } catch (PDOException $e) {
+        // Silently handle exceptions
+    }
+}
+
+/**
+ * Validate and round effort to nearest 0.5 increment (Min: 0.5)
+ */
+function sanitizeDays($value) {
+    $val = (float)$value;
+    if ($val < 0.5) return 0.5;
+    return round($val * 2) / 2;
+}
+
+/**
+ * Fetch all configured holiday dates (YYYY-MM-DD)
+ */
+function getHolidaysList() {
+    $db = getDBConnection();
+    if (!$db) return [];
+    try {
+        return $db->query("SELECT holiday_date FROM holidays")->fetchAll(PDO::FETCH_COLUMN);
+    } catch (PDOException $e) {
+        return [];
+    }
+}
+
+/**
+ * Check if a date is a working business day (Non-Weekend & Non-Holiday)
+ */
+function isWorkingDay(DateTime $date, array $holidays = []) {
+    $dayOfWeek = (int)$date->format('N'); // 1 (Mon) to 7 (Sun)
+    if ($dayOfWeek >= 6) {
+        return false; // Weekend
+    }
+    if (in_array($date->format('Y-m-d'), $holidays)) {
+        return false; // Public / Company Holiday
+    }
+    return true;
+}
+
+/**
+ * Add working business days to a starting date
+ */
+function addBusinessDays(DateTime $startDate, $daysToAdd, array $holidays = []) {
+    $currentDate = clone $startDate;
+    
+    // Ensure starting date is a working day
+    while (!isWorkingDay($currentDate, $holidays)) {
+        $currentDate->modify('+1 day');
+    }
+
+    $remainingDays = max(1, ceil((float)$daysToAdd)) - 1;
+    while ($remainingDays > 0) {
+        $currentDate->modify('+1 day');
+        if (isWorkingDay($currentDate, $holidays)) {
+            $remainingDays -= 1;
+        }
+    }
+    return $currentDate;
+}
+
+/**
+ * Recalculate Project Task Schedules skipping Weekends & Holidays
+ */
+function recalculateProjectSchedule($projectId) {
+    $db = getDBConnection();
+    if (!$db) return;
+
+    $holidays = getHolidaysList();
+
+    // 1. Fetch project baseline start date
+    $stmtP = $db->prepare("SELECT start_date FROM projects WHERE id = :pid");
+    $stmtP->execute(['pid' => $projectId]);
+    $projectStart = $stmtP->fetchColumn() ?: date('Y-m-d');
+
+    // 2. Fetch project tasks ordered by sequence
+    $stmtT = $db->prepare("SELECT id, current_days FROM tasks WHERE project_id = :pid ORDER BY sort_order ASC, id ASC");
+    $stmtT->execute(['pid' => $projectId]);
+    $tasks = $stmtT->fetchAll();
+
+    $cursorDate = new DateTime($projectStart);
+    $stmtUpd = $db->prepare("UPDATE tasks SET start_date = :sdate, due_date = :ddate WHERE id = :tid");
+
+    foreach ($tasks as $task) {
+        while (!isWorkingDay($cursorDate, $holidays)) {
+            $cursorDate->modify('+1 day');
+        }
+        $startDateStr = $cursorDate->format('Y-m-d');
+
+        $effortDays = max(0.5, (float)$task['current_days']);
+        $dueDateObj = addBusinessDays($cursorDate, $effortDays, $holidays);
+        $dueDateStr = $dueDateObj->format('Y-m-d');
+
+        $stmtUpd->execute([
+            'sdate' => $startDateStr,
+            'ddate' => $dueDateStr,
+            'tid'   => $task['id']
+        ]);
+
+        $cursorDate = clone $dueDateObj;
+        $cursorDate->modify('+1 day');
+    }
+
+    // 3. Update overall project target date
+    if (!empty($tasks)) {
+        $stmtLast = $db->prepare("SELECT MAX(due_date) FROM tasks WHERE project_id = :pid");
+        $stmtLast->execute(['pid' => $projectId]);
+        $maxDueDate = $stmtLast->fetchColumn();
+
+        if ($maxDueDate) {
+            $stmtProjUpd = $db->prepare("UPDATE projects SET target_completion_date = :maxdate WHERE id = :pid");
+            $stmtProjUpd->execute(['maxdate' => $maxDueDate, 'pid' => $projectId]);
+        }
+    }
+}

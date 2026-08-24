@@ -1,476 +1,555 @@
 <?php
 require_once __DIR__ . '/includes/header.php';
 
-$projectId = (int)($_GET['id'] ?? 0);
-$project = getProjectById($projectId);
+// 1. Fetch Project ID from URL Query String
+$projectId = isset($_GET['id']) ? (int)$_GET['id'] : 0;
+$project   = getProjectById($projectId);
 
+// 2. Redirect or display error if project doesn't exist
 if (!$project) {
-    echo '<div class="panel-card" style="text-align: center; padding: 4rem;">
-            <h2>Project Not Found</h2>
-            <p style="color: var(--text-muted); margin-top: 0.5rem;"><a href="index.php" style="color: var(--primary);">Return to Overview</a></p>
-          </div>';
+    echo '<div class="alert alert-danger my-4">Project not found or invalid ID provided. <a href="index.php" class="alert-link">Return to Dashboard</a></div>';
     require_once __DIR__ . '/includes/footer.php';
     exit;
 }
 
-$milestones = getMilestones($projectId);
-$pendings   = getPendings($projectId);
-$daysInfo   = getRemainingDaysInfo($project['target_completion_date'], $project['status']);
-$statusClass = getStatusBadgeClass($project['status']);
-$priorityClass = getPriorityBadgeClass($project['priority']);
+// 3. Fetch task sequence & dynamic estimated task completion date
+$tasks = getProjectTasks($project['id']);
+$db = getDBConnection();
+$stmtLast = $db->prepare("SELECT MAX(due_date) FROM tasks WHERE project_id = :pid");
+$stmtLast->execute(['pid' => $project['id']]);
+$calculatedCompletionDate = $stmtLast->fetchColumn();
+
+// Fallback to project start date if no tasks exist
+$estimatedCompletion = $calculatedCompletionDate ?: $project['start_date'];
+
+// 4. Calculate Timeline Variance (Task Estimated vs Expected Target Date)
+$scheduleVar = getScheduleVariance($project['target_completion_date'], $estimatedCompletion);
 ?>
 
-<!-- Detail View Header -->
-<div style="margin-bottom: 2rem; display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1rem;">
-  <div>
-    <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem;">
-      <a href="index.php" style="color: var(--text-muted); font-size: 0.9rem;">&larr; Back to Dashboard</a>
-      <span class="category-tag" style="border-left: 3px solid <?= $project['category_color'] ?>;">
-        <span class="category-dot" style="background-color: <?= $project['category_color'] ?>;"></span>
-        <?= htmlspecialchars($project['category_name']) ?>
-      </span>
-    </div>
-    <h1 style="font-size: 2rem; font-weight: 700; color: var(--text-main); margin-bottom: 0.5rem;">
-      <?= htmlspecialchars($project['title']) ?>
-    </h1>
-    <div style="display: flex; gap: 0.5rem; align-items: center; font-size: 0.9rem; color: var(--text-muted);">
-      <span>Lead: <strong style="color: var(--text-main);"><?= htmlspecialchars($project['owner_name']) ?></strong></span> &bull; 
-      <span>Started: <?= date('M j, Y', strtotime($project['start_date'])) ?></span> &bull; 
-      <span>Target Completion: <?= date('M j, Y', strtotime($project['target_completion_date'])) ?></span>
-    </div>
-  </div>
-
-  <div style="display: flex; gap: 0.75rem; align-items: center;">
-    <span class="badge <?= $priorityClass ?>" style="padding: 0.5rem 1rem; font-size: 0.85rem;"><?= $project['priority'] ?> Priority</span>
-    <span class="badge <?= $statusClass ?>" style="padding: 0.5rem 1rem; font-size: 0.85rem;"><?= $project['status'] ?></span>
-    <button class="btn-primary-action" onclick="openModal('quickUpdateModal')">
-      <i class="fa-solid fa-sliders"></i> Update Progress & Status
-    </button>
-  </div>
-</div>
-
-<!-- Attention Alert if flagged -->
-<?php if ($project['needs_attention']): ?>
-  <div class="attention-banner" style="font-size: 0.95rem; padding: 1rem 1.25rem; margin-bottom: 2rem;">
-    <i class="fa-solid fa-triangle-exclamation" style="font-size: 1.3rem;"></i>
-    <div>
-      <strong>Project Flagged as Blocked / Needing Attention:</strong><br>
-      <?= htmlspecialchars($project['attention_reason'] ?: 'Requires executive escalation or team resolution.') ?>
-    </div>
-  </div>
-<?php endif; ?>
-
-<!-- Main 2-Column Detail Grid -->
-<div class="detail-grid">
-  <!-- Left Column: Overview & Milestones -->
-  <div>
-    <!-- Panel 1: Description & Progress -->
-    <div class="panel-card">
-      <div class="panel-title">
-        <span>Project Overview</span>
-        <span style="font-weight: 700; color: var(--accent-cyan);"><?= $project['progress_percent'] ?>% Completed</span>
-      </div>
-
-      <p style="color: var(--text-muted); font-size: 0.95rem; margin-bottom: 1.5rem;">
-        <?= nl2br(htmlspecialchars($project['description'] ?: 'No detailed description recorded.')) ?>
-      </p>
-
-      <div class="progress-section">
-        <div class="progress-bar-bg" style="height: 12px;">
-          <div class="progress-bar-fill <?= $project['progress_percent'] == 100 ? 'complete' : '' ?>" style="width: <?= $project['progress_percent'] ?>%;"></div>
+<!-- Project Overview Header Card -->
+<div class="card mb-3">
+  <div class="card-body">
+    <div class="row align-items-center">
+      <div class="col">
+        <h2 class="card-title h1 mb-2"><?= htmlspecialchars($project['title']) ?></h2>
+        
+        <div class="row g-3 my-1">
+          <div class="col-auto">
+            <div class="text-secondary small">Start Date</div>
+            <strong class="fs-4 text-reset"><i class="ti ti-calendar me-1 text-primary"></i><?= date('M d, Y', strtotime($project['start_date'])) ?></strong>
+          </div>
+          <div class="col-auto border-start ps-3">
+            <div class="text-secondary small">Expected Target Completion</div>
+            <strong class="fs-4 text-reset"><i class="ti ti-calendar-check me-1 text-warning"></i><?= date('M d, Y', strtotime($project['target_completion_date'])) ?></strong>
+          </div>
+          <div class="col-auto border-start ps-3">
+            <div class="text-secondary small">Task Estimated Completion (Calculated)</div>
+            <strong class="fs-4 text-info"><i class="ti ti-clock-play me-1"></i><?= $calculatedCompletionDate ? date('M d, Y', strtotime($calculatedCompletionDate)) : 'Pending Tasks' ?></strong>
+            <span class="badge <?= $scheduleVar['class'] ?> ms-2"><?= $scheduleVar['status'] ?></span>
+          </div>
         </div>
       </div>
     </div>
+  </div>
+</div>
 
-    <!-- Panel 2: Milestones Checklist -->
-    <div class="panel-card">
-      <div class="panel-title">
-        <span>Project Milestones & Key Deliverables (<?= count($milestones) ?>)</span>
-        <button class="btn-primary-action" style="padding: 0.35rem 0.75rem; font-size: 0.8rem;" onclick="openModal('addMilestoneModal')">
-          + Add Milestone
-        </button>
-      </div>
+<!-- Team Structure by Functional/Strategic Group -->
+<div class="card mb-3">
+  <div class="card-header">
+    <h3 class="card-title"><i class="ti ti-users me-2"></i>Project Governance Teams</h3>
+  </div>
+  <div class="card-body">
+    <div class="row g-3">
+      <?php 
+        $teamCategories = ['Strategic', 'Functional', 'Technical', 'Project Management'];
+        foreach ($teamCategories as $cat): 
+      ?>
+        <div class="col-md-3">
+          <div class="card card-sm bg-dark-lt">
+            <div class="card-body">
+              <div class="text-secondary fw-bold small mb-2"><?= $cat ?> Team</div>
+              <?php
+                $stmtTeam = $db->prepare("SELECT tm.full_name FROM team_members tm 
+                                          JOIN project_team_roles ptr ON tm.id = ptr.member_id 
+                                          WHERE ptr.project_id = :pid AND ptr.team_type = :type");
+                $stmtTeam->execute(['pid' => $project['id'], 'type' => $cat]);
+                $members = $stmtTeam->fetchAll();
+              ?>
+              <?php if (empty($members)): ?>
+                <span class="text-secondary small">Unassigned</span>
+              <?php else: ?>
+                <?php foreach ($members as $m): ?>
+                  <span class="badge bg-blue-lt mb-1 d-inline-block"><?= htmlspecialchars($m['full_name']) ?></span>
+                <?php endforeach; ?>
+              <?php endif; ?>
+            </div>
+          </div>
+        </div>
+      <?php endforeach; ?>
+    </div>
+  </div>
+</div>
 
-      <?php if (empty($milestones)): ?>
-        <p style="color: var(--text-muted); font-size: 0.9rem;">No milestones created for this project yet.</p>
-      <?php else: ?>
-        <div style="display: flex; flex-direction: column; gap: 0.75rem;">
-          <?php foreach ($milestones as $m): ?>
-            <?php 
-              $mClass = 'badge-info';
-              if ($m['status'] === 'Completed') $mClass = 'badge-success';
-              if ($m['status'] === 'Delayed')   $mClass = 'badge-danger';
-            ?>
-            <div style="display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 1rem; background: rgba(15, 23, 42, 0.4); border-radius: var(--radius-md); border: 1px solid var(--border-color);">
-              <div style="display: flex; align-items: center; gap: 0.75rem;">
-                <i class="fa-regular <?= $m['status'] === 'Completed' ? 'fa-circle-check' : 'fa-circle' ?>" 
-                   style="font-size: 1.1rem; color: <?= $m['status'] === 'Completed' ? 'var(--accent-emerald)' : 'var(--text-dim)' ?>;"></i>
-                <div>
-                  <div style="font-weight: 600; color: var(--text-main); font-size: 0.92rem;"><?= htmlspecialchars($m['title']) ?></div>
-                  <div style="font-size: 0.78rem; color: var(--text-muted);">Due: <?= date('M j, Y', strtotime($m['due_date'])) ?></div>
+<!-- Task List with RACI Matrix, Day Planning & Order Swappers -->
+<div class="card mb-3">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <h3 class="card-title"><i class="ti ti-list-check me-2"></i>Sequential Task Schedule & RACI Matrix</h3>
+    <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addTaskRaciModal">
+      <i class="ti ti-plus me-1"></i> Add Task
+    </button>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-vcenter card-table">
+      <thead>
+        <tr>
+          <th style="width: 70px;">Seq</th>
+          <th>Task Details</th>
+          <th>RACI Roles</th>
+          <th>Original / Scope Delta / Current</th>
+          <th>Schedule (Auto-Calculated)</th>
+          <th>Status</th>
+          <th class="w-1">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        <?php 
+          $totalTasks = count($tasks);
+          if (empty($tasks)):
+        ?>
+          <tr>
+            <td colspan="7" class="text-center text-secondary py-4">No tasks planned for this project yet.</td>
+          </tr>
+        <?php 
+          else:
+            foreach ($tasks as $idx => $t): 
+              $raci = getRaciAssignments('Task', $t['id']);
+        ?>
+          <tr>
+            <td class="text-secondary fw-bold">
+              <div class="d-flex align-items-center gap-1">
+                <span><?= $idx + 1 ?></span>
+                <div class="btn-group-vertical ms-1">
+                  <?php if ($idx > 0): ?>
+                    <button class="btn btn-ghost-secondary btn-icon btn-xs py-0 px-1" 
+                            title="Move Up" 
+                            onclick="moveTask(<?= $t['id'] ?>, 'up')">
+                      <i class="ti ti-chevron-up fs-4"></i>
+                    </button>
+                  <?php endif; ?>
+                  <?php if ($idx < $totalTasks - 1): ?>
+                    <button class="btn btn-ghost-secondary btn-icon btn-xs py-0 px-1" 
+                            title="Move Down" 
+                            onclick="moveTask(<?= $t['id'] ?>, 'down')">
+                      <i class="ti ti-chevron-down fs-4"></i>
+                    </button>
+                  <?php endif; ?>
                 </div>
               </div>
-
-              <span class="badge <?= $mClass ?>"><?= $m['status'] ?></span>
-            </div>
-          <?php endforeach; ?>
-        </div>
-      <?php endif; ?>
-    </div>
-  </div>
-
-  <!-- Right Column: Action Items & Pendings -->
-  <div>
-    <div class="panel-card">
-      <div class="panel-title">
-        <span>Active Pendings & Action Items</span>
-        <button class="btn-primary-action" style="padding: 0.35rem 0.75rem; font-size: 0.8rem;" onclick="openModal('addPendingModal')">
-          + New Action Item
-        </button>
-      </div>
-
-      <?php if (empty($pendings)): ?>
-        <p style="color: var(--text-muted); font-size: 0.9rem; text-align: center; padding: 1.5rem 0;">
-          No active pendings recorded for this project.
-        </p>
-      <?php else: ?>
-        <div style="display: flex; flex-direction: column; gap: 1rem;">
-          <?php foreach ($pendings as $p): ?>
-            <?php $isResolved = ($p['status'] === 'Resolved'); ?>
-            <div style="background: rgba(15, 23, 42, 0.5); padding: 1rem; border-radius: var(--radius-md); border: 1px solid var(--border-color); opacity: <?= $isResolved ? '0.6' : '1' ?>;">
-              <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.5rem;">
-                <h4 style="font-size: 0.95rem; font-weight: 700; color: var(--text-main);"><?= htmlspecialchars($p['title']) ?></h4>
-                <span class="badge <?= getPriorityBadgeClass($p['priority']) ?>" style="font-size: 0.7rem;"><?= $p['priority'] ?></span>
+            </td>
+            <td>
+              <a href="javascript:void(0)" 
+                 class="fw-bold text-decoration-none text-reset task-title-link" 
+                 onclick='viewTaskDetails(<?= json_encode($t) ?>, <?= json_encode($raci) ?>)'
+                 style="cursor: pointer;">
+                <i class="ti ti-file-text me-1 text-primary"></i><?= htmlspecialchars($t['title']) ?>
+              </a>
+              <div class="text-secondary small text-truncate" style="max-width: 250px;">
+                <?= htmlspecialchars($t['description'] ?: 'No additional notes') ?>
               </div>
+            </td>
+            <td>
+              <div class="d-flex gap-1 flex-wrap">
+                <span class="badge bg-green text-green-fg" title="Responsible: <?= !empty($raci['R']) ? implode(', ', array_column($raci['R'], 'full_name')) : 'Unassigned' ?>">R</span>
+                <span class="badge bg-blue text-blue-fg" title="Accountable: <?= !empty($raci['A']) ? implode(', ', array_column($raci['A'], 'full_name')) : 'Unassigned' ?>">A</span>
+                <span class="badge bg-amber text-amber-fg" title="Consulted: <?= !empty($raci['C']) ? implode(', ', array_column($raci['C'], 'full_name')) : 'Unassigned' ?>">C</span>
+                <span class="badge bg-purple text-purple-fg" title="Informed: <?= !empty($raci['I']) ? implode(', ', array_column($raci['I'], 'full_name')) : 'Unassigned' ?>">I</span>
+              </div>
+            </td>
+            <td>
+              <div>Orig: <strong><?= number_format($t['original_days'] ?? 0.5, 1) ?>d</strong></div>
+              <div class="small text-muted">
+                Delta: <span class="<?= ($t['effort_changes'] ?? 0) > 0 ? 'text-danger' : (($t['effort_changes'] ?? 0) < 0 ? 'text-success' : '') ?>"><?= (($t['effort_changes'] ?? 0) >= 0 ? '+' : '') . number_format($t['effort_changes'] ?? 0, 1) ?>d</span> 
+                &bull; Total: <strong class="text-info"><?= number_format($t['current_days'] ?? 0.5, 1) ?>d</strong>
+              </div>
+            </td>
+            <td>
+              <div class="small fw-bold">
+                <?= !empty($t['start_date']) ? date('M d', strtotime($t['start_date'])) : 'TBD' ?> 
+                &rarr; 
+                <?= !empty($t['due_date']) ? date('M d, Y', strtotime($t['due_date'])) : 'TBD' ?>
+              </div>
+            </td>
+            <td>
+              <span class="badge bg-secondary-lt"><?= htmlspecialchars($t['status']) ?></span>
+            </td>
+            <td>
+              <button class="btn btn-sm btn-icon btn-ghost-secondary" 
+                      title="Edit Task & Scope"
+                      onclick='openEditTaskModal(<?= json_encode($t) ?>, <?= json_encode($raci) ?>)'>
+                <i class="ti ti-edit"></i>
+              </button>
+            </td>
+          </tr>
+        <?php 
+            endforeach; 
+          endif;
+        ?>
+      </tbody>
+    </table>
+  </div>
+</div>
 
-              <?php if (!empty($p['description'])): ?>
-                <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 0.75rem;"><?= htmlspecialchars($p['description']) ?></p>
-              <?php endif; ?>
-
-              <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.78rem; color: var(--text-dim);">
-                <span>Assigned: <strong style="color: var(--text-muted);"><?= htmlspecialchars($p['assigned_to'] ?: 'Unassigned') ?></strong></span>
-                
-                <?php if ($isResolved): ?>
-                  <span class="badge badge-success"><i class="fa-solid fa-check"></i> Resolved</span>
-                <?php else: ?>
-                  <button type="button" class="btn-primary-action" style="padding: 0.2rem 0.5rem; font-size: 0.72rem; background: rgba(16, 185, 129, 0.2); color: #34d399; box-shadow: none;"
-                          onclick="togglePendingStatus(<?= $p['id'] ?>, 'Resolved')">
-                    Mark Resolved
-                  </button>
-                <?php endif; ?>
+<!-- Modal: View Task Details & RACI -->
+<div class="modal modal-blur fade" id="viewTaskModal" tabindex="-1" role="dialog" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="v_task_title"><i class="ti ti-info-circle me-2 text-primary"></i>Task Details</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="row g-2 mb-3 align-items-center">
+          <div class="col-auto">
+            <span class="badge bg-secondary-lt fs-6" id="v_task_status">Status</span>
+          </div>
+          <div class="col-auto">
+            <span class="badge bg-primary-lt fs-6" id="v_task_priority">Priority</span>
+          </div>
+          <div class="col text-end text-secondary small">
+            Schedule: <strong id="v_task_schedule" class="text-reset">--</strong>
+          </div>
+        </div>
+        <div class="mb-4">
+          <label class="form-label fw-bold text-secondary">Description / Notes</label>
+          <div class="card card-sm bg-dark-lt p-3 text-secondary" id="v_task_desc">No notes provided.</div>
+        </div>
+        <h4 class="mb-3 text-primary"><i class="ti ti-users me-2"></i>RACI Matrix Member Assignments</h4>
+        <div class="row g-3 mb-3">
+          <div class="col-md-6">
+            <div class="card card-sm border-success">
+              <div class="card-body">
+                <div class="text-success fw-bold small mb-2"><i class="ti ti-user-check me-1"></i>Responsible (R) - Doers</div>
+                <div id="v_raci_R" class="d-flex flex-wrap gap-1"><span class="text-secondary small">None</span></div>
               </div>
             </div>
-          <?php endforeach; ?>
+          </div>
+          <div class="col-md-6">
+            <div class="card card-sm border-blue">
+              <div class="card-body">
+                <div class="text-blue fw-bold small mb-2"><i class="ti ti-shield-check me-1"></i>Accountable (A) - Approvers</div>
+                <div id="v_raci_A" class="d-flex flex-wrap gap-1"><span class="text-secondary small">None</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="card card-sm border-warning">
+              <div class="card-body">
+                <div class="text-warning fw-bold small mb-2"><i class="ti ti-messages me-1"></i>Consulted (C) - Advisors</div>
+                <div id="v_raci_C" class="d-flex flex-wrap gap-1"><span class="text-secondary small">None</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="card card-sm border-purple">
+              <div class="card-body">
+                <div class="text-purple fw-bold small mb-2"><i class="ti ti-bell me-1"></i>Informed (I) - Updates Only</div>
+                <div id="v_raci_I" class="d-flex flex-wrap gap-1"><span class="text-secondary small">None</span></div>
+              </div>
+            </div>
+          </div>
         </div>
-      <?php endif; ?>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-link link-secondary me-auto" data-bs-dismiss="modal">Close</button>
+        <button type="button" class="btn btn-primary" id="btn_open_edit_from_view"><i class="ti ti-edit me-1"></i>Edit Task Details</button>
+      </div>
     </div>
   </div>
 </div>
 
-<!-- Modal: Quick Update Progress & Status -->
-<div class="modal-overlay" id="quickUpdateModal">
-  <div class="modal-box">
-    <div class="modal-header">
-      <h3 style="font-size: 1.2rem; font-weight: 700;">Update Progress &amp; Status</h3>
-      <button class="modal-close" onclick="closeModal('quickUpdateModal')">&times;</button>
-    </div>
-
-    <form action="api.php" method="POST">
-      <input type="hidden" name="action" value="update_project">
-      <input type="hidden" name="project_id" value="<?= $project['id'] ?>">
-
-      <div class="form-group">
-        <div style="display: flex; justify-content: space-between; margin-bottom: 0.4rem;">
-          <label class="form-label">Completion Percentage</label>
-          <strong id="progressValueDisplay" style="color: var(--accent-cyan); font-size: 1.1rem;"><?= $project['progress_percent'] ?>%</strong>
-        </div>
-        <input type="range" id="progressSlider" name="progress_percent" min="0" max="100" value="<?= $project['progress_percent'] ?>" style="width: 100%; accent-color: var(--primary);">
-      </div>
-
-      <div class="form-grid">
-        <div class="form-group">
-          <label class="form-label">Status</label>
-          <select name="status" class="form-select" style="width: 100%;">
-            <option value="In Progress" <?= $project['status'] === 'In Progress' ? 'selected' : '' ?>>In Progress</option>
-            <option value="Needs Attention" <?= $project['status'] === 'Needs Attention' ? 'selected' : '' ?>>Needs Attention</option>
-            <option value="Under Review" <?= $project['status'] === 'Under Review' ? 'selected' : '' ?>>Under Review</option>
-            <option value="Planning" <?= $project['status'] === 'Planning' ? 'selected' : '' ?>>Planning</option>
-            <option value="On Hold" <?= $project['status'] === 'On Hold' ? 'selected' : '' ?>>On Hold</option>
-            <option value="Completed" <?= $project['status'] === 'Completed' ? 'selected' : '' ?>>Completed</option>
-          </select>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label">Priority</label>
-          <select name="priority" class="form-select" style="width: 100%;">
-            <option value="Critical" <?= $project['priority'] === 'Critical' ? 'selected' : '' ?>>Critical</option>
-            <option value="High" <?= $project['priority'] === 'High' ? 'selected' : '' ?>>High</option>
-            <option value="Medium" <?= $project['priority'] === 'Medium' ? 'selected' : '' ?>>Medium</option>
-            <option value="Low" <?= $project['priority'] === 'Low' ? 'selected' : '' ?>>Low</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="form-group" style="background: rgba(244, 63, 94, 0.08); padding: 1rem; border-radius: var(--radius-md); border: 1px solid rgba(244, 63, 94, 0.2);">
-        <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.9rem; font-weight: 600; color: #fecdd3;">
-          <input type="checkbox" name="needs_attention" value="1" <?= $project['needs_attention'] ? 'checked' : '' ?> onchange="document.getElementById('editAttentionReasonGroup').style.display = this.checked ? 'block' : 'none';">
-          Flag as "Needs Attention" / Blocked
-        </label>
-        <div id="editAttentionReasonGroup" style="display: <?= $project['needs_attention'] ? 'block' : 'none' ?>; margin-top: 0.75rem;">
-          <input type="text" name="attention_reason" class="form-input" style="width: 100%;" value="<?= htmlspecialchars($project['attention_reason'] ?? '') ?>" placeholder="Describe active blocker or issue...">
-        </div>
-      </div>
-
-      <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1.5rem;">
-        <button type="button" class="btn-primary-action" style="background: rgba(255,255,255,0.1); box-shadow: none;" onclick="closeModal('quickUpdateModal')">Cancel</button>
-        <button type="submit" class="btn-primary-action">Save Changes</button>
-      </div>
-    </form>
-  </div>
-</div>
-
-<!-- Modal: Add Pending Action Item -->
-<div class="modal-overlay" id="addPendingModal">
-  <div class="modal-box">
-    <div class="modal-header">
-      <h3 style="font-size: 1.2rem; font-weight: 700;">Add Action Item / Pending</h3>
-      <button class="modal-close" onclick="closeModal('addPendingModal')">&times;</button>
-    </div>
-
-    <form action="api.php" method="POST">
-      <input type="hidden" name="action" value="create_pending">
-      <input type="hidden" name="project_id" value="<?= $project['id'] ?>">
-
-      <div class="form-group">
-        <label class="form-label">Title / Blocker Summary</label>
-        <input type="text" name="title" class="form-input" style="width: 100%;" placeholder="e.g. Client approval for production certificate" required>
-      </div>
-
-      <div class="form-grid">
-        <div class="form-group">
-          <label class="form-label">Assignee</label>
-          <input type="text" name="assigned_to" class="form-input" style="width: 100%;" placeholder="e.g. Sarah Jenkins">
-        </div>
-
-        <div class="form-group">
-          <label class="form-label">Priority</label>
-          <select name="priority" class="form-select" style="width: 100%;">
-            <option value="Urgent">Urgent</option>
-            <option value="High" selected>High</option>
-            <option value="Medium">Medium</option>
-            <option value="Low">Low</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="form-group">
-        <label class="form-label">Description / Context</label>
-        <textarea name="description" class="form-input" style="width: 100%; height: 70px;"></textarea>
-      </div>
-
-      <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1.5rem;">
-        <button type="button" class="btn-primary-action" style="background: rgba(255,255,255,0.1); box-shadow: none;" onclick="closeModal('addPendingModal')">Cancel</button>
-        <button type="submit" class="btn-primary-action">Add Item</button>
-      </div>
-    </form>
-  </div>
-</div>
-
-<!-- Modal: Add Milestone -->
-<div class="modal-overlay" id="addMilestoneModal">
-  <div class="modal-box">
-    <div class="modal-header">
-      <h3 style="font-size: 1.2rem; font-weight: 700;">Add Project Milestone</h3>
-      <button class="modal-close" onclick="closeModal('addMilestoneModal')">&times;</button>
-    </div>
-
-    <form action="api.php" method="POST">
-      <input type="hidden" name="action" value="create_milestone">
-      <input type="hidden" name="project_id" value="<?= $project['id'] ?>">
-
-      <div class="form-group">
-        <label class="form-label">Milestone Title</label>
-        <input type="text" name="title" class="form-input" style="width: 100%;" placeholder="e.g. User Acceptance Testing Sign-off" required>
-      </div>
-
-      <div class="form-grid">
-        <div class="form-group">
-          <label class="form-label">Target Due Date</label>
-          <input type="date" name="due_date" class="form-input" style="width: 100%;" value="<?= date('Y-m-d', strtotime('+14 days')) ?>" required>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label">Status</label>
-          <select name="status" class="form-select" style="width: 100%;">
-            <option value="Pending">Pending</option>
-            <option value="In Progress">In Progress</option>
-            <option value="Completed">Completed</option>
-          </select>
-        </div>
-      </div>
-
-      <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1.5rem;">
-        <button type="button" class="btn-primary-action" style="background: rgba(255,255,255,0.1); box-shadow: none;" onclick="closeModal('addMilestoneModal')">Cancel</button>
-        <button type="submit" class="btn-primary-action">Save Milestone</button>
-      </div>
-    </form>
-  </div>
-</div>
-
-<!-- Panel: Daily Updates Log History -->
-    <div class="panel-card" style="margin-top: 1.5rem;">
-      <div class="panel-title">
-        <span>Daily Progress Updates</span>
-      </div>
-
-      <!-- Quick Add Daily Log Form -->
-      <form action="api.php" method="POST" style="display: flex; gap: 0.75rem; margin-bottom: 1.5rem; align-items: center;">
-        <input type="hidden" name="action" value="add_daily_log">
+<!-- Modal: Add Task with RACI -->
+<div class="modal modal-blur fade" id="addTaskRaciModal" tabindex="-1" role="dialog" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
+    <div class="modal-content">
+      <form action="api.php" method="POST">
+        <input type="hidden" name="action" value="create_task_raci">
         <input type="hidden" name="project_id" value="<?= $project['id'] ?>">
-        
-        <input type="text" name="log_text" class="form-input" style="flex: 1;" placeholder="Log today's progress or update..." required>
-        
-        <label style="display: flex; align-items: center; gap: 0.3rem; font-size: 0.85rem; color: #f87171; cursor: pointer; white-space: nowrap;">
-          <input type="checkbox" name="is_blocked" value="1"> Flag Blocker
-        </label>
 
-        <button type="submit" class="btn-primary-action" style="padding: 0.55rem 1rem;">Post Log</button>
+        <div class="modal-header">
+          <h5 class="modal-title"><i class="ti ti-plus me-2"></i>Add Sequential Task</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label required">Task Title</label>
+            <input type="text" name="title" class="form-control" placeholder="e.g. Conduct System Integration Testing" required>
+          </div>
+
+          <div class="row">
+            <div class="col-md-6 mb-3">
+              <label class="form-label required">Original Effort Estimation (Days)</label>
+              <input type="number" step="0.5" min="0.5" name="original_days" class="form-control" value="1.0" required>
+              <span class="form-hint">Minimum 0.5 days; accepts 0.5 increments.</span>
+            </div>
+            <div class="col-md-6 mb-3">
+              <label class="form-label">Priority</label>
+              <select name="priority" class="form-select">
+                <option value="Medium">Medium</option>
+                <option value="High">High</option>
+                <option value="Critical">Critical</option>
+                <option value="Low">Low</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label">Description</label>
+            <textarea name="description" class="form-control" rows="2" placeholder="Detail scope or key deliverables..."></textarea>
+          </div>
+
+          <hr class="my-3">
+          <h4 class="mb-2 text-primary">RACI Matrix Assignment</h4>
+          <p class="text-secondary small mb-3">Select team members for each matrix responsibility role.</p>
+
+          <?php $allMembers = getTeamMembers(); ?>
+
+          <div class="row g-2">
+            <div class="col-md-6 mb-3">
+              <label class="form-label text-success fw-bold"><i class="ti ti-user-check me-1"></i>Responsible (R) - Doers</label>
+              <select name="raci[R][]" class="form-select" multiple size="3">
+                <?php foreach ($allMembers as $tm): ?>
+                  <option value="<?= $tm['id'] ?>"><?= htmlspecialchars($tm['full_name']) ?></option>
+                <?php endforeach; ?>
+              </select>
+            </div>
+            <div class="col-md-6 mb-3">
+              <label class="form-label text-blue fw-bold"><i class="ti ti-shield-check me-1"></i>Accountable (A) - Approver</label>
+              <select name="raci[A][]" class="form-select" multiple size="3">
+                <?php foreach ($allMembers as $tm): ?>
+                  <option value="<?= $tm['id'] ?>"><?= htmlspecialchars($tm['full_name']) ?></option>
+                <?php endforeach; ?>
+              </select>
+            </div>
+            <div class="col-md-6 mb-3">
+              <label class="form-label text-warning fw-bold"><i class="ti ti-messages me-1"></i>Consulted (C) - Advisors</label>
+              <select name="raci[C][]" class="form-select" multiple size="3">
+                <?php foreach ($allMembers as $tm): ?>
+                  <option value="<?= $tm['id'] ?>"><?= htmlspecialchars($tm['full_name']) ?></option>
+                <?php endforeach; ?>
+              </select>
+            </div>
+            <div class="col-md-6 mb-3">
+              <label class="form-label text-purple fw-bold"><i class="ti ti-bell me-1"></i>Informed (I) - Updates Only</label>
+              <select name="raci[I][]" class="form-select" multiple size="3">
+                <?php foreach ($allMembers as $tm): ?>
+                  <option value="<?= $tm['id'] ?>"><?= htmlspecialchars($tm['full_name']) ?></option>
+                <?php endforeach; ?>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-link link-secondary me-auto" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Task & Auto-Schedule</button>
+        </div>
       </form>
-
-      <!-- Logs Timeline -->
-      <?php
-        $db = getDBConnection();
-        $stmtLogs = $db->prepare("SELECT * FROM daily_logs WHERE project_id = :pid ORDER BY created_at DESC LIMIT 10");
-        $stmtLogs->execute(['pid' => $project['id']]);
-        $dailyLogs = $stmtLogs->fetchAll();
-      ?>
-
-      <?php if (empty($dailyLogs)): ?>
-        <p style="color: var(--text-muted); font-size: 0.88rem;">No daily update notes logged yet for this project.</p>
-      <?php else: ?>
-        <div style="display: flex; flex-direction: column; gap: 0.75rem;">
-          <?php foreach ($dailyLogs as $log): ?>
-            <div style="padding: 0.75rem 1rem; background: rgba(15, 23, 42, 0.4); border-radius: var(--radius-md); border-left: 3px solid <?= $log['is_blocked'] ? '#f87171' : '#6366f1' ?>;">
-              <div style="display: flex; justify-content: space-between; font-size: 0.78rem; color: var(--text-muted); margin-bottom: 0.25rem;">
-                <span>Logged on: <?= date('M d, Y H:i', strtotime($log['created_at'])) ?></span>
-                <?php if ($log['is_blocked']): ?>
-                  <span class="badge badge-danger">BLOCKER REPORTED</span>
-                <?php endif; ?>
-              </div>
-              <div style="font-size: 0.9rem; color: var(--text-main);"><?= htmlspecialchars($log['log_text']) ?></div>
-            </div>
-          <?php endforeach; ?>
-        </div>
-      <?php endif; ?>
     </div>
-
-    <!-- Panel: Project Team Members -->
-<div class="panel-card" style="margin-top: 1.5rem;">
-  <div class="panel-title">
-    <span>Project Team Allocation</span>
   </div>
-  
-  <?php 
-    $projectTeam = getProjectTeam($project['id']);
-  ?>
-  <?php if (empty($projectTeam)): ?>
-    <p style="color: var(--text-muted); font-size: 0.88rem;">No team members assigned to this project team yet.</p>
-  <?php else: ?>
-    <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
-      <?php foreach ($projectTeam as $tm): ?>
-        <div style="background: rgba(15, 23, 42, 0.5); border: 1px solid var(--border-color); padding: 0.5rem 0.85rem; border-radius: var(--radius-md); display: flex; align-items: center; gap: 0.5rem;">
-          <div class="owner-avatar" style="width: 22px; height: 22px; font-size: 0.65rem;">
-            <?= strtoupper(substr($tm['full_name'], 0, 1)) ?>
-          </div>
-          <span style="font-size: 0.85rem; color: #fff; font-weight: 500;"><?= htmlspecialchars($tm['full_name']) ?></span>
-          <span style="font-size: 0.75rem; color: var(--text-muted);">(<?= htmlspecialchars($tm['role_title']) ?>)</span>
-        </div>
-      <?php endforeach; ?>
-    </div>
-  <?php endif; ?>
 </div>
 
-<!-- Panel: Tasks List -->
-<div class="panel-card" style="margin-top: 1.5rem;">
-  <div class="panel-title">
-    <span>Project Tasks</span>
-    <button class="btn-primary-action" style="padding: 0.35rem 0.75rem; font-size: 0.8rem;" onclick="openModal('addTaskModal')">
-      + Create Task
-    </button>
-  </div>
+<!-- Modal: Edit Task & Scope Changes -->
+<div class="modal modal-blur fade" id="editTaskRaciModal" tabindex="-1" role="dialog" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
+    <div class="modal-content">
+      <form action="api.php" method="POST">
+        <input type="hidden" name="action" value="update_task_raci">
+        <input type="hidden" name="task_id" id="edit_task_id">
+        <input type="hidden" name="project_id" value="<?= $project['id'] ?>">
 
-  <?php 
-    $tasks = getProjectTasks($project['id']);
-  ?>
-  <?php if (empty($tasks)): ?>
-    <p style="color: var(--text-muted); font-size: 0.88rem;">No tasks created for this project yet.</p>
-  <?php else: ?>
-    <div style="display: flex; flex-direction: column; gap: 0.75rem;">
-      <?php foreach ($tasks as $task): ?>
-        <div style="padding: 0.75rem 1rem; background: rgba(15, 23, 42, 0.4); border-radius: var(--radius-md); border: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
-          <div>
-            <div style="font-weight: 600; color: #fff; font-size: 0.92rem;"><?= htmlspecialchars($task['title']) ?></div>
-            <div style="font-size: 0.78rem; color: var(--text-muted);">
-              Assignee: <strong><?= htmlspecialchars($task['assignee_name'] ?: 'Unassigned') ?></strong> &bull; Due: <?= date('M d, Y', strtotime($task['due_date'])) ?>
+        <div class="modal-header">
+          <h5 class="modal-title"><i class="ti ti-edit me-2"></i>Edit Task & Log Effort Changes</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label required">Task Title</label>
+            <input type="text" name="title" id="edit_title" class="form-control" required>
+          </div>
+
+          <div class="row">
+            <div class="col-md-4 mb-3">
+              <label class="form-label">Additional Scope Delta (Days)</label>
+              <input type="number" step="0.5" name="effort_change" class="form-control" placeholder="e.g. +0.5 or -0.5" value="0.0">
+              <span class="form-hint">Adjust current total scope (0.5 steps).</span>
+            </div>
+            <div class="col-md-4 mb-3">
+              <label class="form-label">Actual Spent Days</label>
+              <input type="number" step="0.5" min="0.0" name="actual_days" id="edit_actual_days" class="form-control" value="0.0">
+            </div>
+            <div class="col-md-4 mb-3">
+              <label class="form-label">Status</label>
+              <select name="status" id="edit_status" class="form-select">
+                <option value="To Do">To Do</option>
+                <option value="In Progress">In Progress</option>
+                <option value="Under Review">Under Review</option>
+                <option value="Completed">Completed</option>
+              </select>
             </div>
           </div>
-          <span class="badge <?= getPriorityBadgeClass($task['priority']) ?>"><?= $task['priority'] ?></span>
+
+          <div class="mb-3">
+            <label class="form-label">Description / Scope Change Reason</label>
+            <textarea name="description" id="edit_description" class="form-control" rows="2"></textarea>
+          </div>
+
+          <hr class="my-3">
+          <h4 class="mb-2 text-primary">Update RACI Matrix Assignment</h4>
+          <div class="row g-2">
+            <div class="col-md-6 mb-3">
+              <label class="form-label text-success fw-bold">Responsible (R)</label>
+              <select name="raci[R][]" id="edit_raci_R" class="form-select" multiple size="3">
+                <?php foreach ($allMembers as $tm): ?>
+                  <option value="<?= $tm['id'] ?>"><?= htmlspecialchars($tm['full_name']) ?></option>
+                <?php endforeach; ?>
+              </select>
+            </div>
+            <div class="col-md-6 mb-3">
+              <label class="form-label text-blue fw-bold">Accountable (A)</label>
+              <select name="raci[A][]" id="edit_raci_A" class="form-select" multiple size="3">
+                <?php foreach ($allMembers as $tm): ?>
+                  <option value="<?= $tm['id'] ?>"><?= htmlspecialchars($tm['full_name']) ?></option>
+                <?php endforeach; ?>
+              </select>
+            </div>
+            <div class="col-md-6 mb-3">
+              <label class="form-label text-warning fw-bold">Consulted (C)</label>
+              <select name="raci[C][]" id="edit_raci_C" class="form-select" multiple size="3">
+                <?php foreach ($allMembers as $tm): ?>
+                  <option value="<?= $tm['id'] ?>"><?= htmlspecialchars($tm['full_name']) ?></option>
+                <?php endforeach; ?>
+              </select>
+            </div>
+            <div class="col-md-6 mb-3">
+              <label class="form-label text-purple fw-bold">Informed (I)</label>
+              <select name="raci[I][]" id="edit_raci_I" class="form-select" multiple size="3">
+                <?php foreach ($allMembers as $tm): ?>
+                  <option value="<?= $tm['id'] ?>"><?= htmlspecialchars($tm['full_name']) ?></option>
+                <?php endforeach; ?>
+              </select>
+            </div>
+          </div>
         </div>
-      <?php endforeach; ?>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-link link-secondary me-auto" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Update Task & Recalculate</button>
+        </div>
+      </form>
     </div>
-  <?php endif; ?>
-</div>
-
-<!-- Modal: Create Task -->
-<div class="modal-overlay" id="addTaskModal">
-  <div class="modal-box">
-    <div class="modal-header">
-      <h3 style="font-size: 1.2rem; font-weight: 700; color: #fff;">Create Project Task</h3>
-      <button class="modal-close" onclick="closeModal('addTaskModal')">&times;</button>
-    </div>
-
-    <form action="api.php" method="POST">
-      <input type="hidden" name="action" value="create_task">
-      <input type="hidden" name="project_id" value="<?= $project['id'] ?>">
-
-      <div class="form-group">
-        <label class="form-label">Task Title</label>
-        <input type="text" name="title" class="form-input" style="width: 100%;" placeholder="e.g. Prepare staging environment" required>
-      </div>
-
-      <div class="form-grid">
-        <div class="form-group">
-          <label class="form-label">Assign To (Project Team)</label>
-          <select name="assigned_to" class="form-select" style="width: 100%;">
-            <option value="">Unassigned</option>
-            <?php foreach ($projectTeam as $tm): ?>
-              <option value="<?= $tm['id'] ?>"><?= htmlspecialchars($tm['full_name']) ?></option>
-            <?php endforeach; ?>
-          </select>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label">Priority</label>
-          <select name="priority" class="form-select" style="width: 100%;">
-            <option value="Medium">Medium</option>
-            <option value="High">High</option>
-            <option value="Critical">Critical</option>
-            <option value="Low">Low</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="form-group">
-        <label class="form-label">Target Due Date</label>
-        <input type="date" name="due_date" class="form-input" style="width: 100%;" value="<?= date('Y-m-d', strtotime('+7 days')) ?>" required>
-      </div>
-
-      <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1.5rem;">
-        <button type="button" class="btn-primary-action" style="background: rgba(255,255,255,0.1);" onclick="closeModal('addTaskModal')">Cancel</button>
-        <button type="submit" class="btn-primary-action">Save Task</button>
-      </div>
-    </form>
   </div>
 </div>
+
+<script>
+let currentViewingTask = null;
+let currentViewingRaci = null;
+
+function viewTaskDetails(task, raci) {
+    currentViewingTask = task;
+    currentViewingRaci = raci;
+
+    document.getElementById('v_task_title').innerHTML = '<i class="ti ti-file-text me-2 text-primary"></i>' + escapeHtml(task.title);
+    document.getElementById('v_task_status').innerText = task.status || 'To Do';
+    document.getElementById('v_task_priority').innerText = (task.priority || 'Medium') + ' Priority';
+    document.getElementById('v_task_schedule').innerText = (task.start_date || 'TBD') + ' to ' + (task.due_date || 'TBD');
+    document.getElementById('v_task_desc').innerText = task.description || 'No description provided for this task.';
+
+    ['R', 'A', 'C', 'I'].forEach(function(role) {
+        let container = document.getElementById('v_raci_' + role);
+        container.innerHTML = '';
+        
+        if (raci && raci[role] && raci[role].length > 0) {
+            raci[role].forEach(function(member) {
+                let badge = document.createElement('span');
+                badge.className = 'badge bg-secondary-lt me-1 mb-1';
+                badge.innerHTML = '<i class="ti ti-user me-1"></i>' + escapeHtml(member.full_name) + ' <small class="text-muted">(' + escapeHtml(member.role_title || 'Member') + ')</small>';
+                container.appendChild(badge);
+            });
+        } else {
+            container.innerHTML = '<span class="text-secondary small">Unassigned</span>';
+        }
+    });
+
+    document.getElementById('btn_open_edit_from_view').onclick = function() {
+        var viewModalEl = document.getElementById('viewTaskModal');
+        var viewModal = bootstrap.Modal.getInstance(viewModalEl);
+        if (viewModal) viewModal.hide();
+        openEditTaskModal(currentViewingTask, currentViewingRaci);
+    };
+
+    var viewModal = new bootstrap.Modal(document.getElementById('viewTaskModal'));
+    viewModal.show();
+}
+
+function openEditTaskModal(task, raci) {
+    document.getElementById('edit_task_id').value = task.id;
+    document.getElementById('edit_title').value = task.title;
+    document.getElementById('edit_actual_days').value = task.actual_days || 0.0;
+    document.getElementById('edit_status').value = task.status;
+    document.getElementById('edit_description').value = task.description || '';
+
+    ['R', 'A', 'C', 'I'].forEach(function(role) {
+        var select = document.getElementById('edit_raci_' + role);
+        if (select) {
+            Array.from(select.options).forEach(function(opt) {
+                opt.selected = false;
+            });
+            if (raci && raci[role]) {
+                var memberIds = raci[role].map(function(m) { return m.id; });
+                Array.from(select.options).forEach(function(opt) {
+                    if (memberIds.includes(parseInt(opt.value))) {
+                        opt.selected = true;
+                    }
+                });
+            }
+        }
+    });
+
+    var editModal = new bootstrap.Modal(document.getElementById('editTaskRaciModal'));
+    editModal.show();
+}
+
+function moveTask(taskId, direction) {
+    let formData = new FormData();
+    formData.append('action', 'swap_task_order');
+    formData.append('task_id', taskId);
+    formData.append('direction', direction);
+    formData.append('project_id', '<?= $project['id'] ?>');
+
+    fetch('api.php', {
+        method: 'POST',
+        body: formData,
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            window.location.reload();
+        } else {
+            alert(data.message || 'Error swapping task order.');
+        }
+    })
+    .catch(error => console.error('Error swapping task position:', error));
+}
+
+function escapeHtml(text) {
+    if (!text) return '';
+    return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+}
+</script>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

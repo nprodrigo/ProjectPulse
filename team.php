@@ -32,136 +32,154 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 }
 
 $teamMembers = getTeamMembers();
-$db = getDBConnection();
 ?>
 
-<div class="main-container">
-  <div class="control-bar" style="margin-bottom: 2rem;">
-    <div>
-      <h2 style="font-size: 1.4rem; font-weight: 700; color: #ffffff;">
-        <i class="fa-solid fa-users"></i> Team Directory & Workload Center
-      </h2>
-      <p style="color: var(--text-muted); font-size: 0.85rem;">
-        Manage global team members, role titles, and details.
-      </p>
+<!-- Page Title & Header Bar -->
+<div class="card mb-3">
+  <div class="card-body">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+      <div>
+        <h2 class="card-title h1 mb-1"><i class="ti ti-users me-2 text-primary"></i>Team Directory & Workload Center</h2>
+        <div class="text-secondary small">Manage global team members, role titles, and contact details.</div>
+      </div>
+      <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addTeamMemberModal">
+        <i class="ti ti-user-plus me-1"></i> Add Team Member
+      </button>
     </div>
-
-    <button class="btn-primary-action" onclick="openModal('addTeamMemberModal')">
-      <i class="fa-solid fa-user-plus"></i> Add Team Member
-    </button>
   </div>
+</div>
 
-  <?php if (isset($_GET['msg'])): ?>
-    <div class="attention-banner" style="background: rgba(16, 185, 129, 0.15); border-left-color: var(--accent-emerald); color: #6ee7b7; margin-bottom: 1.5rem;">
-      <i class="fa-solid fa-circle-check" style="color: var(--accent-emerald);"></i>
-      <div><?= $_GET['msg'] === 'updated' ? 'Team member details updated!' : 'Team member added successfully!' ?></div>
+<!-- Success Alert Banner -->
+<?php if (isset($_GET['msg'])): ?>
+  <div class="alert alert-success alert-dismissible fade show mb-3" role="alert">
+    <div class="d-flex align-items-center">
+      <i class="ti ti-circle-check fs-2 me-2"></i>
+      <div>
+        <?= $_GET['msg'] === 'updated' ? 'Team member details updated successfully!' : 'New team member added successfully!' ?>
+      </div>
     </div>
-  <?php endif; ?>
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+  </div>
+<?php endif; ?>
 
-  <div class="projects-grid">
+<!-- Team Directory Grid -->
+<div class="row row-cards">
+  <?php if (empty($teamMembers)): ?>
+    <div class="col-12">
+      <div class="card card-body text-center py-5">
+        <p class="text-secondary mb-0">No team members registered yet.</p>
+      </div>
+    </div>
+  <?php else: ?>
     <?php foreach ($teamMembers as $member): ?>
-      <?php
-        $initial = strtoupper(substr($member['full_name'], 0, 1));
-      ?>
-      <div class="project-card">
-        <div>
-          <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-            <div style="display: flex; align-items: center; gap: 0.85rem; margin-bottom: 1rem;">
-              <div class="owner-avatar" style="width: 42px; height: 42px; font-size: 1.1rem; flex-shrink: 0;">
-                <?= $initial ?>
+      <?php $initial = strtoupper(substr($member['full_name'], 0, 1)); ?>
+      <div class="col-md-6 col-lg-4">
+        <div class="card card-sm">
+          <div class="card-body">
+            <div class="d-flex align-items-center justify-content-between mb-3">
+              <div class="d-flex align-items-center gap-3">
+                <span class="avatar avatar-md bg-blue-lt rounded-circle fw-bold fs-3">
+                  <?= $initial ?>
+                </span>
+                <div>
+                  <h3 class="card-title mb-0"><?= htmlspecialchars($member['full_name']) ?></h3>
+                  <div class="text-secondary small"><?= htmlspecialchars($member['role_title'] ?: 'Team Member') ?></div>
+                </div>
               </div>
-              <div>
-                <h3 style="font-size: 1.1rem; font-weight: 700; color: #ffffff; margin: 0;"><?= htmlspecialchars($member['full_name']) ?></h3>
-                <div style="font-size: 0.82rem; color: var(--text-muted);"><?= htmlspecialchars($member['role_title']) ?></div>
-              </div>
+              <button class="btn btn-icon btn-ghost-secondary btn-sm" 
+                      title="Edit Member"
+                      onclick="editMember(<?= $member['id'] ?>, '<?= htmlspecialchars(addslashes($member['full_name'])) ?>', '<?= htmlspecialchars(addslashes($member['email'])) ?>', '<?= htmlspecialchars(addslashes($member['role_title'])) ?>')">
+                <i class="ti ti-edit fs-3"></i>
+              </button>
             </div>
-
-            <!-- Edit Button -->
-            <button class="btn-primary-action" style="padding: 0.25rem 0.55rem; font-size: 0.75rem; background: rgba(255,255,255,0.08);"
-                    onclick="editMember(<?= $member['id'] ?>, '<?= htmlspecialchars(addslashes($member['full_name'])) ?>', '<?= htmlspecialchars(addslashes($member['email'])) ?>', '<?= htmlspecialchars(addslashes($member['role_title'])) ?>')">
-              <i class="fa-solid fa-pen"></i> Edit
-            </button>
-          </div>
-
-          <div style="font-size: 0.82rem; color: var(--text-dim);">
-            <i class="fa-regular fa-envelope"></i> <?= htmlspecialchars($member['email']) ?>
+            
+            <div class="d-flex align-items-center text-secondary small pt-2 border-top">
+              <i class="ti ti-mail me-2"></i>
+              <a href="mailto:<?= htmlspecialchars($member['email']) ?>" class="text-reset text-truncate">
+                <?= htmlspecialchars($member['email']) ?>
+              </a>
+            </div>
           </div>
         </div>
       </div>
     <?php endforeach; ?>
-  </div>
+  <?php endif; ?>
 </div>
 
 <!-- Modal: Add Team Member -->
-<div class="modal-overlay" id="addTeamMemberModal">
-  <div class="modal-box">
-    <div class="modal-header">
-      <h3 style="font-size: 1.2rem; font-weight: 700; color: #fff;">Add New Team Member</h3>
-      <button class="modal-close" onclick="closeModal('addTeamMemberModal')">&times;</button>
+<div class="modal modal-blur fade" id="addTeamMemberModal" tabindex="-1" role="dialog" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered" role="document">
+    <div class="modal-content">
+      <form action="team.php" method="POST">
+        <input type="hidden" name="action" value="create_team_member">
+
+        <div class="modal-header">
+          <h5 class="modal-title"><i class="ti ti-user-plus me-2"></i>Add New Team Member</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label required">Full Name</label>
+            <input type="text" name="full_name" class="form-control" placeholder="e.g. John Doe" required>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label required">Email Address</label>
+            <input type="email" name="email" class="form-control" placeholder="john.d@company.com" required>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label">Role Title</label>
+            <input type="text" name="role_title" class="form-control" placeholder="e.g. Senior Solution Architect">
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-link link-secondary me-auto" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary"><i class="ti ti-check me-1"></i>Save Member</button>
+        </div>
+      </form>
     </div>
-
-    <form action="team.php" method="POST">
-      <input type="hidden" name="action" value="create_team_member">
-
-      <div class="form-group">
-        <label class="form-label">Full Name</label>
-        <input type="text" name="full_name" class="form-input" style="width: 100%;" placeholder="e.g. John Doe" required>
-      </div>
-
-      <div class="form-grid">
-        <div class="form-group">
-          <label class="form-label">Email Address</label>
-          <input type="email" name="email" class="form-input" style="width: 100%;" placeholder="john.d@company.com" required>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label">Role Title</label>
-          <input type="text" name="role_title" class="form-input" style="width: 100%;" placeholder="e.g. Senior Developer">
-        </div>
-      </div>
-
-      <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1.5rem;">
-        <button type="button" class="btn-primary-action" style="background: rgba(255,255,255,0.1);" onclick="closeModal('addTeamMemberModal')">Cancel</button>
-        <button type="submit" class="btn-primary-action">Save Member</button>
-      </div>
-    </form>
   </div>
 </div>
 
 <!-- Modal: Edit Team Member -->
-<div class="modal-overlay" id="editTeamMemberModal">
-  <div class="modal-box">
-    <div class="modal-header">
-      <h3 style="font-size: 1.2rem; font-weight: 700; color: #fff;">Edit Team Member</h3>
-      <button class="modal-close" onclick="closeModal('editTeamMemberModal')">&times;</button>
+<div class="modal modal-blur fade" id="editTeamMemberModal" tabindex="-1" role="dialog" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered" role="document">
+    <div class="modal-content">
+      <form action="team.php" method="POST">
+        <input type="hidden" name="action" value="update_team_member">
+        <input type="hidden" name="member_id" id="edit_member_id">
+
+        <div class="modal-header">
+          <h5 class="modal-title"><i class="ti ti-edit me-2"></i>Edit Team Member</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label required">Full Name</label>
+            <input type="text" name="full_name" id="edit_full_name" class="form-control" required>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label required">Email Address</label>
+            <input type="email" name="email" id="edit_email" class="form-control" required>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label">Role Title</label>
+            <input type="text" name="role_title" id="edit_role_title" class="form-control">
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-link link-secondary me-auto" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary"><i class="ti ti-check me-1"></i>Update Details</button>
+        </div>
+      </form>
     </div>
-
-    <form action="team.php" method="POST">
-      <input type="hidden" name="action" value="update_team_member">
-      <input type="hidden" name="member_id" id="edit_member_id">
-
-      <div class="form-group">
-        <label class="form-label">Full Name</label>
-        <input type="text" name="full_name" id="edit_full_name" class="form-input" style="width: 100%;" required>
-      </div>
-
-      <div class="form-grid">
-        <div class="form-group">
-          <label class="form-label">Email Address</label>
-          <input type="email" name="email" id="edit_email" class="form-input" style="width: 100%;" required>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label">Role Title</label>
-          <input type="text" name="role_title" id="edit_role_title" class="form-input" style="width: 100%;">
-        </div>
-      </div>
-
-      <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1.5rem;">
-        <button type="button" class="btn-primary-action" style="background: rgba(255,255,255,0.1);" onclick="closeModal('editTeamMemberModal')">Cancel</button>
-        <button type="submit" class="btn-primary-action">Update Details</button>
-      </div>
-    </form>
   </div>
 </div>
 
@@ -171,7 +189,9 @@ function editMember(id, name, email, role) {
     document.getElementById('edit_full_name').value = name;
     document.getElementById('edit_email').value = email;
     document.getElementById('edit_role_title').value = role;
-    openModal('editTeamMemberModal');
+
+    var editModal = new bootstrap.Modal(document.getElementById('editTeamMemberModal'));
+    editModal.show();
 }
 </script>
 

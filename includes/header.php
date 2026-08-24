@@ -1,7 +1,6 @@
 <?php
 session_start();
 
-// Authentication Guard: Redirect unauthenticated users
 if (!isset($_SESSION['user_id'])) {
     header('Location: login.php');
     exit;
@@ -14,138 +13,159 @@ $metrics = getDashboardMetrics();
 $categories = getCategories();
 $dbConnected = (getDBConnection() !== null);
 ?>
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Project Executive Tracker | Progress & Pendings Dashboard</title>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+  <title>ProjectPulse Tracker - Executive Dashboard</title>
   
-  <!-- FontAwesome 6 Free Icons CDN -->
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-  
-  <!-- Custom Stylesheet -->
-  <link rel="stylesheet" href="assets/css/style.css">
+  <!-- Tabler Core CSS & Icons -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0-beta20/dist/css/tabler.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
 </head>
-<body>
+<body class="theme-dark">
+  <div class="page">
+    
+    <!-- Navbar Header -->
+    <header class="navbar navbar-expand-md navbar-dark d-print-none">
+      <div class="container-xl">
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar-menu">
+          <span class="navbar-toggler-icon"></span>
+        </button>
+        
+        <h1 class="navbar-brand navbar-brand-autodark me-md-3">
+          <a href="index.php" class="d-flex align-items-center gap-2 text-decoration-none text-white">
+            <span class="avatar bg-primary text-white rounded"><i class="ti ti-activity icon"></i></span>
+            <span>ProjectPulse</span>
+          </a>
+        </h1>
 
-<!-- Header & Navbar -->
-<header class="navbar">
-  <a href="index.php" class="brand">
-    <div class="brand-icon">
-      <i class="fa-solid fa-chart-line"></i>
-    </div>
-    <span>ProjectPulse Tracker</span>
-  </a>
-
-  <nav>
-    <ul class="nav-links">
-      <li class="nav-item">
-        <a href="index.php" class="<?= $currentPage === 'index.php' ? 'active' : '' ?>">
-          <i class="fa-solid fa-table-cells"></i> Overview
-        </a>
-      </li>
-      <li class="nav-item">
-        <a href="projects.php" class="<?= $currentPage === 'projects.php' ? 'active' : '' ?>">
-          <i class="fa-solid fa-diagram-project"></i> All Projects
-        </a>
-      </li>
-      <li class="nav-item">
-        <a href="timeline.php" class="<?= $currentPage === 'timeline.php' ? 'active' : '' ?>">
-          <i class="fa-solid fa-calendar-days"></i> Timeline
-        </a>
-      </li>
-      <li class="nav-item">
-        <a href="attention.php" class="<?= $currentPage === 'attention.php' ? 'active' : '' ?>">
-          <i class="fa-solid fa-triangle-exclamation"></i> Needs Attention
-        </a>
-      </li>
-      <li class="nav-item">
-        <a href="weekly_report.php" class="<?= $currentPage === 'weekly_report.php' ? 'active' : '' ?>">
-          <i class="fa-solid fa-file-invoice"></i> Weekly Report
-        </a>
-      </li>
-      <li class="nav-item">
-        <a href="daily_report.php" class="<?= $currentPage === 'daily_report.php' ? 'active' : '' ?>">
-          <i class="fa-solid fa-pen-to-square"></i> Daily Report
-        </a>
-      </li>
-      <li class="nav-item">
-        <a href="team.php" class="<?= $currentPage === 'team.php' ? 'active' : '' ?>">
-          <i class="fa-solid fa-users"></i> Team
-        </a>
-      </li>
-    </ul>
-  </nav>
-
-  <div style="display: flex; align-items: center; gap: 1rem;">
-    <span style="font-size: 0.85rem; color: var(--text-muted);">
-      <i class="fa-solid fa-circle-user" style="color: var(--primary);"></i> <?= htmlspecialchars($_SESSION['full_name']) ?>
-    </span>
-    <a href="logout.php" class="btn-primary-action" style="background: rgba(244, 63, 94, 0.2); color: #fb7185; border: 1px solid rgba(244, 63, 94, 0.4); padding: 0.4rem 0.85rem;">
-      <i class="fa-solid fa-right-from-bracket"></i> Logout
-    </a>
-  </div>
-</header>
-
-<main class="main-container">
-
-<?php if (!$dbConnected): ?>
-  <!-- Database Connection Warning Banner -->
-  <div class="db-warning-card">
-    <div class="db-warning-icon">
-      <i class="fa-solid fa-database"></i>
-    </div>
-    <div class="db-warning-content">
-      <h3>Remote MySQL Database Connection Warning</h3>
-      <p>Could not connect to MySQL using current configuration parameters in <code>config/database.php</code>.</p>
-      <p>Please ensure your MySQL server is running, the host IP/Domain is reachable from this PHP server, and import <code>sql/schema.sql</code> into your remote MySQL database.</p>
-      <div class="db-warning-code">
-        Current Host: <?= htmlspecialchars(DB_HOST) ?>:<?= htmlspecialchars(DB_PORT) ?> | DB Name: <?= htmlspecialchars(DB_NAME) ?> | User: <?= htmlspecialchars(DB_USER) ?>
+        <div class="navbar-nav flex-row order-md-last ms-auto">
+          <div class="nav-item dropdown">
+            <a href="#" class="nav-link d-flex lh-1 text-reset p-0" data-bs-toggle="dropdown">
+              <span class="avatar avatar-sm bg-blue-lt"><i class="ti ti-user"></i></span>
+              <div class="d-none d-xl-block ps-2">
+                <div><?= htmlspecialchars($_SESSION['full_name']) ?></div>
+                <div class="mt-1 small text-secondary">Authorized User</div>
+              </div>
+            </a>
+            <div class="dropdown-menu dropdown-menu-end dropdown-menu-arrow">
+              <a href="logout.php" class="dropdown-item text-danger"><i class="ti ti-logout me-2"></i> Logout</a>
+            </div>
+          </div>
+        </div>
       </div>
-    </div>
-  </div>
-<?php endif; ?>
+    </header>
 
-<!-- Top Executive Summary Cards -->
-<section class="stats-grid">
-  <div class="stat-card">
-    <div class="stat-icon blue">
-      <i class="fa-solid fa-folder-open"></i>
-    </div>
-    <div class="stat-info">
-      <div class="stat-value"><?= $metrics['total_projects'] ?></div>
-      <div class="stat-label">Total Projects</div>
-    </div>
-  </div>
+    <!-- Navigation Bar -->
+    <header class="navbar-expand-md">
+      <div class="collapse navbar-collapse" id="navbar-menu">
+        <div class="navbar">
+          <div class="container-xl">
+            <ul class="navbar-nav">
+              <li class="nav-item <?= $currentPage === 'index.php' ? 'active' : '' ?>">
+                <a class="nav-link" href="index.php">
+                  <span class="nav-link-icon d-md-none d-lg-inline-block"><i class="ti ti-layout-dashboard"></i></span>
+                  <span class="nav-link-title">Overview</span>
+                </a>
+              </li>
+              <li class="nav-item <?= $currentPage === 'projects.php' ? 'active' : '' ?>">
+                <a class="nav-link" href="projects.php">
+                  <span class="nav-link-icon d-md-none d-lg-inline-block"><i class="ti ti-folders"></i></span>
+                  <span class="nav-link-title">All Projects</span>
+                </a>
+              </li>
+              <li class="nav-item <?= $currentPage === 'timeline.php' ? 'active' : '' ?>">
+                <a class="nav-link" href="timeline.php">
+                  <span class="nav-link-icon d-md-none d-lg-inline-block"><i class="ti ti-calendar-event"></i></span>
+                  <span class="nav-link-title">Timeline</span>
+                </a>
+              </li>
+              <li class="nav-item <?= $currentPage === 'attention.php' ? 'active' : '' ?>">
+                <a class="nav-link" href="attention.php">
+                  <span class="nav-link-icon d-md-none d-lg-inline-block"><i class="ti ti-alert-triangle"></i></span>
+                  <span class="nav-link-title">Needs Attention</span>
+                  <?php if ($metrics['attention_needed'] > 0): ?>
+                    <span class="badge bg-danger ms-2"><?= $metrics['attention_needed'] ?></span>
+                  <?php endif; ?>
+                </a>
+              </li>
+              <li class="nav-item <?= $currentPage === 'weekly_report.php' ? 'active' : '' ?>">
+                <a class="nav-link" href="weekly_report.php">
+                  <span class="nav-link-icon d-md-none d-lg-inline-block"><i class="ti ti-file-analytics"></i></span>
+                  <span class="nav-link-title">Weekly Report</span>
+                </a>
+              </li>
+              <li class="nav-item <?= $currentPage === 'daily_report.php' ? 'active' : '' ?>">
+                <a class="nav-link" href="daily_report.php">
+                  <span class="nav-link-icon d-md-none d-lg-inline-block"><i class="ti ti-edit-circle"></i></span>
+                  <span class="nav-link-title">Daily Report</span>
+                </a>
+              </li>
+              <li class="nav-item <?= $currentPage === 'team.php' ? 'active' : '' ?>">
+                <a class="nav-link" href="team.php">
+                  <span class="nav-link-icon d-md-none d-lg-inline-block"><i class="ti ti-users"></i></span>
+                  <span class="nav-link-title">Team</span>
+                </a>
+              </li>
+            </ul>
 
-  <div class="stat-card">
-    <div class="stat-icon emerald">
-      <i class="fa-solid fa-bars-progress"></i>
-    </div>
-    <div class="stat-info">
-      <div class="stat-value"><?= $metrics['avg_progress'] ?>%</div>
-      <div class="stat-label">Avg Active Completion</div>
-    </div>
-  </div>
+            <div class="my-2 my-md-0 flex-grow-1 flex-md-grow-0 order-first order-md-last">
+              <button class="btn btn-primary w-100" data-bs-toggle="modal" data-bs-target="#addProjectModal">
+                <i class="ti ti-plus me-1"></i> New Project
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </header>
 
-  <div class="stat-card">
-    <div class="stat-icon rose">
-      <i class="fa-solid fa-triangle-exclamation"></i>
-    </div>
-    <div class="stat-info">
-      <div class="stat-value"><?= $metrics['attention_needed'] ?></div>
-      <div class="stat-label">Needs Attention / Blocked</div>
-    </div>
-  </div>
+    <!-- Main Container -->
+    <div class="page-wrapper">
+      <div class="page-body">
+        <div class="container-xl">
 
-  <div class="stat-card">
-    <div class="stat-icon amber">
-      <i class="fa-solid fa-clock"></i>
-    </div>
-    <div class="stat-info">
-      <div class="stat-value"><?= $metrics['finishing_soon'] ?></div>
-      <div class="stat-label">Finishing Next 30 Days</div>
-    </div>
-  </div>
-</section>
+          <!-- Executive Summary Metrics Cards -->
+          <div class="row row-deck row-cards mb-4">
+            <div class="col-6 col-sm-3">
+              <div class="card">
+                <div class="card-body">
+                  <div class="d-flex align-items-center">
+                    <div class="subheader">Total Projects</div>
+                  </div>
+                  <div class="h1 mb-3 me-2"><?= $metrics['total_projects'] ?></div>
+                </div>
+              </div>
+            </div>
+            <div class="col-6 col-sm-3">
+              <div class="card">
+                <div class="card-body">
+                  <div class="d-flex align-items-center">
+                    <div class="subheader">Avg Completion</div>
+                  </div>
+                  <div class="h1 mb-3 me-2"><?= $metrics['avg_progress'] ?>%</div>
+                </div>
+              </div>
+            </div>
+            <div class="col-6 col-sm-3">
+              <div class="card">
+                <div class="card-body">
+                  <div class="d-flex align-items-center">
+                    <div class="subheader">Blocked / Attention</div>
+                  </div>
+                  <div class="h1 mb-3 me-2 text-danger"><?= $metrics['attention_needed'] ?></div>
+                </div>
+              </div>
+            </div>
+            <div class="col-6 col-sm-3">
+              <div class="card">
+                <div class="card-body">
+                  <div class="d-flex align-items-center">
+                    <div class="subheader">Finishing Soon</div>
+                  </div>
+                  <div class="h1 mb-3 me-2 text-warning"><?= $metrics['finishing_soon'] ?></div>
+                </div>
+              </div>
+            </div>
+          </div>

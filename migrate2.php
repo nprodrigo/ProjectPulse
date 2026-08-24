@@ -113,15 +113,19 @@ try {
         `id` INT AUTO_INCREMENT PRIMARY KEY,
         `project_id` INT NOT NULL,
         `module_id` INT NULL,
+        `start_date` DATE NULL,
         `assigned_to` INT NULL,
         `title` VARCHAR(200) NOT NULL,
         `description` TEXT NULL,
         `priority` ENUM('Low', 'Medium', 'High', 'Critical') DEFAULT 'Medium',
         `status` ENUM('To Do', 'In Progress', 'Under Review', 'Completed') DEFAULT 'To Do',
+        `sort_order` INT NOT NULL DEFAULT 0,
         `due_date` DATE NULL,
         `original_due_date` DATE NULL,
-        `estimated_hours` DECIMAL(6,2) DEFAULT 0.00,
-        `actual_hours` DECIMAL(6,2) DEFAULT 0.00,
+        `original_days` DECIMAL(5,1) NOT NULL DEFAULT 0.5,
+        `current_days` DECIMAL(5,1) NOT NULL DEFAULT 0.5,
+        `effort_changes` DECIMAL(5,1) NOT NULL DEFAULT 0.0,
+        `actual_days` DECIMAL(5,1) NOT NULL DEFAULT 0.0,
         `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (`project_id`) REFERENCES `projects`(`id`) ON DELETE CASCADE,
         FOREIGN KEY (`assigned_to`) REFERENCES `team_members`(`id`) ON DELETE SET NULL,
@@ -140,7 +144,16 @@ try {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;");
     echo "<p class='info'>✓ RACI Matrix table verified.</p>";
 
-    // 9. Daily Logs Table
+    // 9. Holidays Schema for Business Day Schedule Calculations
+    $db->exec("CREATE TABLE IF NOT EXISTS `holidays` (
+        `id` INT AUTO_INCREMENT PRIMARY KEY,
+        `holiday_date` DATE NOT NULL UNIQUE,
+        `title` VARCHAR(100) NOT NULL,
+        `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;");
+    echo "<p class='info'>✓ Holidays calendar table verified.</p>";
+
+    // 10. Daily Logs Table
     $db->exec("CREATE TABLE IF NOT EXISTS `daily_logs` (
         `id` INT AUTO_INCREMENT PRIMARY KEY,
         `project_id` INT NOT NULL,
@@ -151,7 +164,7 @@ try {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;");
     echo "<p class='info'>✓ Daily Logs table verified.</p>";
 
-    // 10. Users Table & Authentication Seeding (Fixed Parameter Binding)
+    // 11. Users Table & Authentication Seeding
     $db->exec("CREATE TABLE IF NOT EXISTS `users` (
         `id` INT AUTO_INCREMENT PRIMARY KEY,
         `username` VARCHAR(50) NOT NULL UNIQUE,
@@ -162,7 +175,6 @@ try {
 
     $cleanHash = password_hash('Password123!', PASSWORD_BCRYPT);
     
-    // Binding parameters explicitly for both user entries
     $stmtU = $db->prepare("INSERT INTO `users` (`username`, `full_name`, `password`) VALUES
         ('admin', 'System Administrator', :pass1),
         ('niro', 'Niroshan', :pass2)

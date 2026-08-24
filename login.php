@@ -2,7 +2,6 @@
 session_start();
 require_once __DIR__ . '/config/database.php';
 
-// Redirect if already logged in
 if (isset($_SESSION['user_id'])) {
     header('Location: index.php');
     exit;
@@ -35,47 +34,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 ?>
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Login | ProjectPulse Tracker</title>
-  <link rel="stylesheet" href="assets/css/style.css">
-  <style>
-    body { display: flex; align-items: center; justify-content: center; min-height: 100vh; background-color: var(--bg-dark); }
-    .login-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: 2.5rem; width: 100%; max-width: 400px; box-shadow: 0 20px 40px rgba(0,0,0,0.6); }
-  </style>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+  <title>Login - ProjectPulse</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0-beta20/dist/css/tabler.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
 </head>
-<body>
+<body class="d-flex flex-column theme-dark">
+  <div class="page page-center">
+    <div class="container container-tight py-4">
+      <div class="text-center mb-4">
+        <h1 class="navbar-brand navbar-brand-autodark"><i class="ti ti-activity text-primary me-2"></i>ProjectPulse</h1>
+      </div>
+      
+      <form class="card card-md" action="login.php" method="POST" autocomplete="off">
+        <div class="card-body">
+          <h2 class="h2 text-center mb-4">Sign in to your account</h2>
+          
+          <?php if (!empty($error)): ?>
+            <div class="alert alert-danger py-2" role="alert"><?= htmlspecialchars($error) ?></div>
+          <?php endif; ?>
 
-<div class="login-card">
-  <div style="text-align: center; margin-bottom: 2rem;">
-    <h2 style="color: #fff; font-size: 1.5rem; font-weight: 700;">ProjectPulse Login</h2>
-    <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.3rem;">Sign in to access authorized dashboard data.</p>
+          <div class="mb-3">
+            <label class="form-label">Username</label>
+            <input type="text" name="username" class="form-control" placeholder="e.g. niro" required autofocus>
+          </div>
+          <div class="mb-2">
+            <label class="form-label">Password</label>
+            <input type="password" name="password" class="form-control" placeholder="••••••••" required>
+          </div>
+          <div class="form-footer">
+            <button type="submit" class="btn btn-primary w-100">Sign in</button>
+          </div>
+        </div>
+      </form>
+    </div>
   </div>
-
-  <?php if (!empty($error)): ?>
-    <div style="background: rgba(244, 63, 94, 0.15); border: 1px solid rgba(244, 63, 94, 0.3); color: #fca5a5; padding: 0.75rem; border-radius: 6px; font-size: 0.85rem; margin-bottom: 1.5rem;">
-      <?= htmlspecialchars($error) ?>
-    </div>
-  <?php endif; ?>
-
-  <form method="POST" action="login.php">
-    <div class="form-group" style="margin-bottom: 1.25rem;">
-      <label class="form-label" style="color: var(--text-muted); font-size: 0.85rem; display: block; margin-bottom: 0.4rem;">Username</label>
-      <input type="text" name="username" class="form-input" style="width: 100%;" placeholder="e.g. niro" required autofocus>
-    </div>
-
-    <div class="form-group" style="margin-bottom: 1.5rem;">
-      <label class="form-label" style="color: var(--text-muted); font-size: 0.85rem; display: block; margin-bottom: 0.4rem;">Password</label>
-      <input type="password" name="password" class="form-input" style="width: 100%;" placeholder="••••••••" required>
-    </div>
-
-    <button type="submit" class="btn-primary-action" style="width: 100%; justify-content: center; padding: 0.75rem;">
-      Sign In
-    </button>
-  </form>
-</div>
-
 </body>
 </html>

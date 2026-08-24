@@ -9,8 +9,8 @@ if (!isset($_SESSION['user_id'])) {
 require_once __DIR__ . '/functions.php';
 
 $currentPage = basename($_SERVER['PHP_SELF']);
-$metrics = getDashboardMetrics();
-$categories = getCategories();
+$metrics     = getDashboardMetrics();
+$categories  = getCategories();
 $dbConnected = (getDBConnection() !== null);
 ?>
 <!doctype html>
@@ -20,34 +20,97 @@ $dbConnected = (getDBConnection() !== null);
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
   <title>ProjectPulse Tracker - Executive Dashboard</title>
   
-  <!-- Tabler Core CSS & Icons -->
+  <!-- Tabler Core CSS & Webfont Icons -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0-beta20/dist/css/tabler.min.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
+
+  <style>
+    /* 2-Tier Header Styling */
+    .header-tier-top {
+      background-color: #0b1329 !important;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      padding-top: 0.65rem;
+      padding-bottom: 0.65rem;
+    }
+
+    .header-tier-nav {
+      background-color: #0f172a !important;
+      border-bottom: 2px solid #334155 !important;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    }
+
+    .navbar-brand span {
+      color: #ffffff !important;
+      font-weight: 700;
+      letter-spacing: -0.3px;
+    }
+
+    /* Single-line Nav Tabs */
+    .nav-link-custom {
+      color: #94a3b8 !important;
+      font-weight: 500;
+      white-space: nowrap !important;
+      padding: 0.6rem 1rem !important;
+      border-radius: 6px;
+      transition: all 0.15s ease-in-out;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .nav-link-custom:hover {
+      color: #ffffff !important;
+      background: rgba(255, 255, 255, 0.06) !important;
+    }
+
+    .nav-item.active .nav-link-custom {
+      color: #ffffff !important;
+      background-color: #6366f1 !important;
+      box-shadow: 0 2px 6px rgba(99, 102, 241, 0.35);
+      font-weight: 600;
+    }
+
+    .user-pill {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      padding: 0.3rem 0.65rem;
+      border-radius: 8px;
+    }
+
+    .user-pill:hover {
+      background: rgba(255, 255, 255, 0.1);
+    }
+  </style>
 </head>
 <body class="theme-dark">
   <div class="page">
     
-    <!-- Navbar Header -->
-    <header class="navbar navbar-expand-md navbar-dark d-print-none">
-      <div class="container-xl">
-        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar-menu">
-          <span class="navbar-toggler-icon"></span>
-        </button>
+    <!-- Top Tier: Brand, Global Action, User Profile -->
+    <div class="header-tier-top">
+      <div class="container-xl d-flex align-items-center justify-content-between">
         
-        <h1 class="navbar-brand navbar-brand-autodark me-md-3">
-          <a href="index.php" class="d-flex align-items-center gap-2 text-decoration-none text-white">
-            <span class="avatar bg-primary text-white rounded"><i class="ti ti-activity icon"></i></span>
-            <span>ProjectPulse</span>
-          </a>
-        </h1>
+        <!-- Brand Logo -->
+        <a href="index.php" class="navbar-brand text-decoration-none d-flex align-items-center gap-2">
+          <span class="avatar bg-primary text-white rounded shadow-sm">
+            <i class="ti ti-activity fs-2"></i>
+          </span>
+          <span class="fs-2">ProjectPulse <small class="fs-5 text-indigo-lt fw-normal ms-1">Tracker</small></span>
+        </a>
 
-        <div class="navbar-nav flex-row order-md-last ms-auto">
-          <div class="nav-item dropdown">
-            <a href="#" class="nav-link d-flex lh-1 text-reset p-0" data-bs-toggle="dropdown">
-              <span class="avatar avatar-sm bg-blue-lt"><i class="ti ti-user"></i></span>
-              <div class="d-none d-xl-block ps-2">
-                <div><?= htmlspecialchars($_SESSION['full_name']) ?></div>
-                <div class="mt-1 small text-secondary">Authorized User</div>
+        <!-- Right Side: Action Button + User Profile -->
+        <div class="d-flex align-items-center gap-3">
+          <button class="btn btn-primary shadow-sm" data-bs-toggle="modal" data-bs-target="#addProjectModal">
+            <i class="ti ti-plus me-1"></i> New Project
+          </button>
+
+          <div class="dropdown">
+            <a href="#" class="user-pill d-flex align-items-center lh-1 text-reset text-decoration-none" data-bs-toggle="dropdown">
+              <span class="avatar avatar-sm bg-indigo-lt text-indigo fw-bold rounded">
+                <?= strtoupper(substr($_SESSION['full_name'], 0, 1)) ?>
+              </span>
+              <div class="d-none d-md-block ps-2 text-start">
+                <div class="fw-bold text-white fs-4"><?= htmlspecialchars($_SESSION['full_name']) ?></div>
+                <div class="small text-muted" style="font-size: 0.72rem;">Authorized User</div>
               </div>
             </a>
             <div class="dropdown-menu dropdown-menu-end dropdown-menu-arrow">
@@ -55,68 +118,58 @@ $dbConnected = (getDBConnection() !== null);
             </div>
           </div>
         </div>
+
       </div>
-    </header>
+    </div>
 
-    <!-- Navigation Bar -->
-    <header class="navbar-expand-md">
-      <div class="collapse navbar-collapse" id="navbar-menu">
-        <div class="navbar">
-          <div class="container-xl">
-            <ul class="navbar-nav">
-              <li class="nav-item <?= $currentPage === 'index.php' ? 'active' : '' ?>">
-                <a class="nav-link" href="index.php">
-                  <span class="nav-link-icon d-md-none d-lg-inline-block"><i class="ti ti-layout-dashboard"></i></span>
-                  <span class="nav-link-title">Overview</span>
-                </a>
-              </li>
-              <li class="nav-item <?= $currentPage === 'projects.php' ? 'active' : '' ?>">
-                <a class="nav-link" href="projects.php">
-                  <span class="nav-link-icon d-md-none d-lg-inline-block"><i class="ti ti-folders"></i></span>
-                  <span class="nav-link-title">All Projects</span>
-                </a>
-              </li>
-              <li class="nav-item <?= $currentPage === 'timeline.php' ? 'active' : '' ?>">
-                <a class="nav-link" href="timeline.php">
-                  <span class="nav-link-icon d-md-none d-lg-inline-block"><i class="ti ti-calendar-event"></i></span>
-                  <span class="nav-link-title">Timeline</span>
-                </a>
-              </li>
-              <li class="nav-item <?= $currentPage === 'attention.php' ? 'active' : '' ?>">
-                <a class="nav-link" href="attention.php">
-                  <span class="nav-link-icon d-md-none d-lg-inline-block"><i class="ti ti-alert-triangle"></i></span>
-                  <span class="nav-link-title">Needs Attention</span>
-                  <?php if ($metrics['attention_needed'] > 0): ?>
-                    <span class="badge bg-danger ms-2"><?= $metrics['attention_needed'] ?></span>
-                  <?php endif; ?>
-                </a>
-              </li>
-              <li class="nav-item <?= $currentPage === 'weekly_report.php' ? 'active' : '' ?>">
-                <a class="nav-link" href="weekly_report.php">
-                  <span class="nav-link-icon d-md-none d-lg-inline-block"><i class="ti ti-file-analytics"></i></span>
-                  <span class="nav-link-title">Weekly Report</span>
-                </a>
-              </li>
-              <li class="nav-item <?= $currentPage === 'daily_report.php' ? 'active' : '' ?>">
-                <a class="nav-link" href="daily_report.php">
-                  <span class="nav-link-icon d-md-none d-lg-inline-block"><i class="ti ti-edit-circle"></i></span>
-                  <span class="nav-link-title">Daily Report</span>
-                </a>
-              </li>
-              <li class="nav-item <?= $currentPage === 'team.php' ? 'active' : '' ?>">
-                <a class="nav-link" href="team.php">
-                  <span class="nav-link-icon d-md-none d-lg-inline-block"><i class="ti ti-users"></i></span>
-                  <span class="nav-link-title">Team</span>
-                </a>
-              </li>
-            </ul>
+    <!-- Bottom Tier: Navigation Bar -->
+    <header class="navbar navbar-expand-md navbar-dark header-tier-nav d-print-none sticky-top">
+      <div class="container-xl">
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar-menu">
+          <span class="navbar-toggler-icon"></span>
+        </button>
 
-            <div class="my-2 my-md-0 flex-grow-1 flex-md-grow-0 order-first order-md-last">
-              <button class="btn btn-primary w-100" data-bs-toggle="modal" data-bs-target="#addProjectModal">
-                <i class="ti ti-plus me-1"></i> New Project
-              </button>
-            </div>
-          </div>
+        <div class="collapse navbar-collapse" id="navbar-menu">
+          <ul class="navbar-nav">
+            <li class="nav-item <?= $currentPage === 'index.php' ? 'active' : '' ?>">
+              <a class="nav-link nav-link-custom" href="index.php">
+                <i class="ti ti-layout-dashboard"></i> Overview
+              </a>
+            </li>
+            <li class="nav-item <?= $currentPage === 'projects.php' ? 'active' : '' ?>">
+              <a class="nav-link nav-link-custom" href="projects.php">
+                <i class="ti ti-folders"></i> All Projects
+              </a>
+            </li>
+            <li class="nav-item <?= $currentPage === 'timeline.php' ? 'active' : '' ?>">
+              <a class="nav-link nav-link-custom" href="timeline.php">
+                <i class="ti ti-calendar-event"></i> Timeline
+              </a>
+            </li>
+            <li class="nav-item <?= $currentPage === 'attention.php' ? 'active' : '' ?>">
+              <a class="nav-link nav-link-custom" href="attention.php">
+                <i class="ti ti-alert-triangle"></i> Needs Attention
+                <?php if ($metrics['attention_needed'] > 0): ?>
+                  <span class="badge bg-danger ms-1"><?= $metrics['attention_needed'] ?></span>
+                <?php endif; ?>
+              </a>
+            </li>
+            <li class="nav-item <?= $currentPage === 'weekly_report.php' ? 'active' : '' ?>">
+              <a class="nav-link nav-link-custom" href="weekly_report.php">
+                <i class="ti ti-file-analytics"></i> Weekly Report
+              </a>
+            </li>
+            <li class="nav-item <?= $currentPage === 'daily_report.php' ? 'active' : '' ?>">
+              <a class="nav-link nav-link-custom" href="daily_report.php">
+                <i class="ti ti-edit-circle"></i> Daily Report
+              </a>
+            </li>
+            <li class="nav-item <?= $currentPage === 'team.php' ? 'active' : '' ?>">
+              <a class="nav-link nav-link-custom" href="team.php">
+                <i class="ti ti-users"></i> Team
+              </a>
+            </li>
+          </ul>
         </div>
       </div>
     </header>
@@ -126,45 +179,37 @@ $dbConnected = (getDBConnection() !== null);
       <div class="page-body">
         <div class="container-xl">
 
-          <!-- Executive Summary Metrics Cards -->
+          <!-- Executive Metrics Grid -->
           <div class="row row-deck row-cards mb-4">
             <div class="col-6 col-sm-3">
               <div class="card">
                 <div class="card-body">
-                  <div class="d-flex align-items-center">
-                    <div class="subheader">Total Projects</div>
-                  </div>
-                  <div class="h1 mb-3 me-2"><?= $metrics['total_projects'] ?></div>
+                  <div class="subheader text-muted">Total Projects</div>
+                  <div class="h1 mb-0 mt-2"><?= $metrics['total_projects'] ?></div>
                 </div>
               </div>
             </div>
             <div class="col-6 col-sm-3">
               <div class="card">
                 <div class="card-body">
-                  <div class="d-flex align-items-center">
-                    <div class="subheader">Avg Completion</div>
-                  </div>
-                  <div class="h1 mb-3 me-2"><?= $metrics['avg_progress'] ?>%</div>
+                  <div class="subheader text-muted">Avg Completion</div>
+                  <div class="h1 mb-0 mt-2"><?= $metrics['avg_progress'] ?>%</div>
                 </div>
               </div>
             </div>
             <div class="col-6 col-sm-3">
               <div class="card">
                 <div class="card-body">
-                  <div class="d-flex align-items-center">
-                    <div class="subheader">Blocked / Attention</div>
-                  </div>
-                  <div class="h1 mb-3 me-2 text-danger"><?= $metrics['attention_needed'] ?></div>
+                  <div class="subheader text-muted">Blocked / Attention</div>
+                  <div class="h1 mb-0 mt-2 text-danger"><?= $metrics['attention_needed'] ?></div>
                 </div>
               </div>
             </div>
             <div class="col-6 col-sm-3">
               <div class="card">
                 <div class="card-body">
-                  <div class="d-flex align-items-center">
-                    <div class="subheader">Finishing Soon</div>
-                  </div>
-                  <div class="h1 mb-3 me-2 text-warning"><?= $metrics['finishing_soon'] ?></div>
+                  <div class="subheader text-muted">Finishing Soon</div>
+                  <div class="h1 mb-0 mt-2 text-warning"><?= $metrics['finishing_soon'] ?></div>
                 </div>
               </div>
             </div>

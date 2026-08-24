@@ -12,40 +12,123 @@ if (!$project) {
     exit;
 }
 
-// 3. Fetch task sequence & dynamic estimated task completion date
+// 3. Fetch Task Sequence & Calculated Completion Date
 $tasks = getProjectTasks($project['id']);
-$db = getDBConnection();
+$db    = getDBConnection();
+
 $stmtLast = $db->prepare("SELECT MAX(due_date) FROM tasks WHERE project_id = :pid");
 $stmtLast->execute(['pid' => $project['id']]);
 $calculatedCompletionDate = $stmtLast->fetchColumn();
 
-// Fallback to project start date if no tasks exist
-$estimatedCompletion = $calculatedCompletionDate ?: $project['start_date'];
+// 4. Calculate Dual Progress KPIs & Health Variance
+$timeElapsedPercent  = getScheduleElapsedPercent($project['start_date'], $project['target_completion_date']);
+$manualProgress      = (int)($project['progress_percent'] ?? 0);
+$taskWeightedPercent = getTaskWeightedProgress($project['id']);
 
-// 4. Calculate Timeline Variance (Task Estimated vs Expected Target Date)
-$scheduleVar = getScheduleVariance($project['target_completion_date'], $estimatedCompletion);
+$paceVariance   = $manualProgress - $timeElapsedPercent;
+$paceBadgeClass = 'bg-success-lt text-success';
+$paceStatusText = 'On Track';
+
+if ($paceVariance < -15) {
+    $paceBadgeClass = 'bg-danger-lt text-danger';
+    $paceStatusText = 'Behind Schedule';
+} elseif ($paceVariance < 0) {
+    $paceBadgeClass = 'bg-warning-lt text-warning';
+    $paceStatusText = 'Slight Delay';
+}
+
+$scheduleVar = getScheduleVariance($project['target_completion_date'], $calculatedCompletionDate);
+
+// 5. Fetch Members assigned to this specific project's Governance Teams
+$projectGovernanceMembers = getProjectGovernanceMembers($project['id']);
+// Fallback to all global team members if project teams are not assigned yet
+if (empty($projectGovernanceMembers)) {
+    $projectGovernanceMembers = getTeamMembers();
+}
 ?>
 
-<!-- Project Overview Header Card -->
+<!-- Print & PDF Stylesheet -->
+<style>
+@media print {
+  .d-print-none, .navbar, .modal, .btn, .btn-group-vertical, header {
+    display: none !important;
+  }
+  body {
+    background: #fff !important;
+    color: #000 !important;
+  }
+  .card {
+    border: 1px solid #ccc !important;
+    box-shadow: none !important;
+    page-break-inside: avoid;
+  }
+  .table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+  }
+  .table td, .table th {
+    padding: 6px 10px !important;
+  }
+}
+</style>
+
+<!-- Top Actions Bar (Export & Print) -->
+<div class="d-flex justify-content-end gap-2 mb-3 d-print-none">
+  <button class="btn btn-outline-secondary" onclick="window.print()">
+    <i class="ti ti-printer me-1"></i> Print / Save as PDF
+  </button>
+</div>
+
+<!-- Project Overview Header Card with Dual Progress KPIs -->
 <div class="card mb-3">
   <div class="card-body">
-    <div class="row align-items-center">
+    <div class="row align-items-center mb-3">
       <div class="col">
-        <h2 class="card-title h1 mb-2"><?= htmlspecialchars($project['title']) ?></h2>
-        
-        <div class="row g-3 my-1">
-          <div class="col-auto">
-            <div class="text-secondary small">Start Date</div>
-            <strong class="fs-4 text-reset"><i class="ti ti-calendar me-1 text-primary"></i><?= date('M d, Y', strtotime($project['start_date'])) ?></strong>
+        <h2 class="card-title h1 mb-1"><?= htmlspecialchars($project['title']) ?></h2>
+        <div class="text-secondary small">
+          Category: <span class="badge bg-secondary-lt"><?= htmlspecialchars($project['category_name']) ?></span> &bull;
+          Pace Status: <span class="badge <?= $paceBadgeClass ?> ms-1"><?= $paceStatusText ?></span> &bull;
+          Target Schedule: <span class="badge <?= $scheduleVar['class'] ?> ms-1"><?= $scheduleVar['status'] ?></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Dual Progress KPI Cards -->
+    <div class="row g-3">
+      <!-- KPI 1: Time Pace (Schedule Elapsed) -->
+      <div class="col-md-6">
+        <div class="card card-sm bg-dark-lt p-3">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <span class="text-secondary fw-bold small">
+              <i class="ti ti-clock me-1 text-primary"></i>1. Schedule Time Elapsed (As of Today)
+            </span>
+            <strong class="text-primary fs-3"><?= $timeElapsedPercent ?>%</strong>
           </div>
-          <div class="col-auto border-start ps-3">
-            <div class="text-secondary small">Expected Target Completion</div>
-            <strong class="fs-4 text-reset"><i class="ti ti-calendar-check me-1 text-warning"></i><?= date('M d, Y', strtotime($project['target_completion_date'])) ?></strong>
+          <div class="progress progress-sm">
+            <div class="progress-bar bg-primary" style="width: <?= $timeElapsedPercent ?>%" role="progressbar" aria-valuenow="<?= $timeElapsedPercent ?>" aria-valuemin="0" aria-valuemax="100"></div>
           </div>
-          <div class="col-auto border-start ps-3">
-            <div class="text-secondary small">Task Estimated Completion (Calculated)</div>
-            <strong class="fs-4 text-info"><i class="ti ti-clock-play me-1"></i><?= $calculatedCompletionDate ? date('M d, Y', strtotime($calculatedCompletionDate)) : 'Pending Tasks' ?></strong>
-            <span class="badge <?= $scheduleVar['class'] ?> ms-2"><?= $scheduleVar['status'] ?></span>
+          <div class="d-flex justify-content-between text-muted small mt-2">
+            <span>Start Date: <strong><?= date('M d, Y', strtotime($project['start_date'])) ?></strong></span>
+            <span>Target Deadline: <strong><?= date('M d, Y', strtotime($project['target_completion_date'])) ?></strong></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- KPI 2: Actual Execution Progress -->
+      <div class="col-md-6">
+        <div class="card card-sm bg-dark-lt p-3">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <span class="text-secondary fw-bold small">
+              <i class="ti ti-chart-pie me-1 text-success"></i>2. Actual Work Completed (Manual / Earned Days)
+            </span>
+            <strong class="text-success fs-3"><?= $manualProgress ?>% <small class="text-muted fs-6">(Task Weighted: <?= $taskWeightedPercent ?>%)</small></strong>
+          </div>
+          <div class="progress progress-sm">
+            <div class="progress-bar bg-success" style="width: <?= $manualProgress ?>%" role="progressbar" aria-valuenow="<?= $manualProgress ?>" aria-valuemin="0" aria-valuemax="100"></div>
+          </div>
+          <div class="d-flex justify-content-between text-muted small mt-2">
+            <span>Pace Variance: <strong class="<?= $paceVariance < 0 ? 'text-danger' : 'text-success' ?>"><?= ($paceVariance >= 0 ? '+' : '') . $paceVariance ?>%</strong></span>
+            <span>Task Estimated Finish: <strong><?= $calculatedCompletionDate ? date('M d, Y', strtotime($calculatedCompletionDate)) : 'Pending Tasks' ?></strong></span>
           </div>
         </div>
       </div>
@@ -55,8 +138,11 @@ $scheduleVar = getScheduleVariance($project['target_completion_date'], $estimate
 
 <!-- Team Structure by Functional/Strategic Group -->
 <div class="card mb-3">
-  <div class="card-header">
+  <div class="card-header d-flex justify-content-between align-items-center">
     <h3 class="card-title"><i class="ti ti-users me-2"></i>Project Governance Teams</h3>
+    <button class="btn btn-outline-primary btn-sm d-print-none" data-bs-toggle="modal" data-bs-target="#manageGovernanceModal">
+      <i class="ti ti-user-plus me-1"></i> Manage Teams
+    </button>
   </div>
   <div class="card-body">
     <div class="row g-3">
@@ -90,11 +176,11 @@ $scheduleVar = getScheduleVariance($project['target_completion_date'], $estimate
   </div>
 </div>
 
-<!-- Task List with RACI Matrix, Day Planning & Order Swappers -->
+<!-- Task Schedule Table (Easy Reference: Responsible Only) -->
 <div class="card mb-3">
   <div class="card-header d-flex justify-content-between align-items-center">
-    <h3 class="card-title"><i class="ti ti-list-check me-2"></i>Sequential Task Schedule & RACI Matrix</h3>
-    <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addTaskRaciModal">
+    <h3 class="card-title"><i class="ti ti-list-check me-2"></i>Sequential Task Schedule & RACI Assignments</h3>
+    <button class="btn btn-primary btn-sm d-print-none" data-bs-toggle="modal" data-bs-target="#addTaskRaciModal">
       <i class="ti ti-plus me-1"></i> Add Task
     </button>
   </div>
@@ -104,11 +190,11 @@ $scheduleVar = getScheduleVariance($project['target_completion_date'], $estimate
         <tr>
           <th style="width: 70px;">Seq</th>
           <th>Task Details</th>
-          <th>RACI Roles</th>
+          <th>Responsible (R) Person</th>
           <th>Original / Scope Delta / Current</th>
           <th>Schedule (Auto-Calculated)</th>
           <th>Status</th>
-          <th class="w-1">Actions</th>
+          <th class="w-1 d-print-none">Actions</th>
         </tr>
       </thead>
       <tbody>
@@ -128,7 +214,7 @@ $scheduleVar = getScheduleVariance($project['target_completion_date'], $estimate
             <td class="text-secondary fw-bold">
               <div class="d-flex align-items-center gap-1">
                 <span><?= $idx + 1 ?></span>
-                <div class="btn-group-vertical ms-1">
+                <div class="btn-group-vertical ms-1 d-print-none">
                   <?php if ($idx > 0): ?>
                     <button class="btn btn-ghost-secondary btn-icon btn-xs py-0 px-1" 
                             title="Move Up" 
@@ -157,13 +243,17 @@ $scheduleVar = getScheduleVariance($project['target_completion_date'], $estimate
                 <?= htmlspecialchars($t['description'] ?: 'No additional notes') ?>
               </div>
             </td>
+            <!-- Easy Reference Column: Responsible (R) Person Only -->
             <td>
-              <div class="d-flex gap-1 flex-wrap">
-                <span class="badge bg-green text-green-fg" title="Responsible: <?= !empty($raci['R']) ? implode(', ', array_column($raci['R'], 'full_name')) : 'Unassigned' ?>">R</span>
-                <span class="badge bg-blue text-blue-fg" title="Accountable: <?= !empty($raci['A']) ? implode(', ', array_column($raci['A'], 'full_name')) : 'Unassigned' ?>">A</span>
-                <span class="badge bg-amber text-amber-fg" title="Consulted: <?= !empty($raci['C']) ? implode(', ', array_column($raci['C'], 'full_name')) : 'Unassigned' ?>">C</span>
-                <span class="badge bg-purple text-purple-fg" title="Informed: <?= !empty($raci['I']) ? implode(', ', array_column($raci['I'], 'full_name')) : 'Unassigned' ?>">I</span>
-              </div>
+              <?php if (!empty($raci['R'])): ?>
+                <?php foreach ($raci['R'] as $rMember): ?>
+                  <span class="badge bg-green-lt text-green border-green mb-1 d-inline-flex align-items-center">
+                    <i class="ti ti-user-check me-1"></i><?= htmlspecialchars($rMember['full_name']) ?>
+                  </span>
+                <?php endforeach; ?>
+              <?php else: ?>
+                <span class="text-secondary small fst-italic">Unassigned</span>
+              <?php endif; ?>
             </td>
             <td>
               <div>Orig: <strong><?= number_format($t['original_days'] ?? 0.5, 1) ?>d</strong></div>
@@ -182,7 +272,7 @@ $scheduleVar = getScheduleVariance($project['target_completion_date'], $estimate
             <td>
               <span class="badge bg-secondary-lt"><?= htmlspecialchars($t['status']) ?></span>
             </td>
-            <td>
+            <td class="d-print-none">
               <button class="btn btn-sm btn-icon btn-ghost-secondary" 
                       title="Edit Task & Scope"
                       onclick='openEditTaskModal(<?= json_encode($t) ?>, <?= json_encode($raci) ?>)'>
@@ -199,7 +289,58 @@ $scheduleVar = getScheduleVariance($project['target_completion_date'], $estimate
   </div>
 </div>
 
-<!-- Modal: View Task Details & RACI -->
+<!-- Modal: Manage Governance Teams -->
+<div class="modal modal-blur fade" id="manageGovernanceModal" tabindex="-1" role="dialog" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
+    <div class="modal-content">
+      <form action="api.php" method="POST">
+        <input type="hidden" name="action" value="update_governance_teams">
+        <input type="hidden" name="project_id" value="<?= $project['id'] ?>">
+
+        <div class="modal-header">
+          <h5 class="modal-title"><i class="ti ti-users me-2"></i>Manage Governance Teams</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+
+        <div class="modal-body">
+          <p class="text-secondary small mb-3">Assign members to governance categories. Assigned members will populate RACI dropdowns for tasks in this project.</p>
+
+          <?php 
+            $allGlobalMembers = getTeamMembers();
+            $assignedByType = [];
+            foreach ($teamCategories as $cat) {
+                $stmtG = $db->prepare("SELECT member_id FROM project_team_roles WHERE project_id = :pid AND team_type = :type");
+                $stmtG->execute(['pid' => $project['id'], 'type' => $cat]);
+                $assignedByType[$cat] = $stmtG->fetchAll(PDO::FETCH_COLUMN);
+            }
+          ?>
+
+          <div class="row g-3">
+            <?php foreach ($teamCategories as $cat): ?>
+              <div class="col-md-6 mb-2">
+                <label class="form-label fw-bold text-primary"><?= $cat ?> Team</label>
+                <select name="teams[<?= $cat ?>][]" class="form-select" multiple size="4">
+                  <?php foreach ($allGlobalMembers as $tm): ?>
+                    <option value="<?= $tm['id'] ?>" <?= in_array($tm['id'], $assignedByType[$cat]) ? 'selected' : '' ?>>
+                      <?= htmlspecialchars($tm['full_name']) ?> (<?= htmlspecialchars($tm['role_title'] ?: 'Member') ?>)
+                    </option>
+                  <?php endforeach; ?>
+                </select>
+              </div>
+            <?php endforeach; ?>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-link link-secondary me-auto" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary"><i class="ti ti-check me-1"></i>Save Governance Teams</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: View Task Details & Complete RACI Roster -->
 <div class="modal modal-blur fade" id="viewTaskModal" tabindex="-1" role="dialog" aria-hidden="true">
   <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
     <div class="modal-content">
@@ -267,7 +408,7 @@ $scheduleVar = getScheduleVariance($project['target_completion_date'], $estimate
   </div>
 </div>
 
-<!-- Modal: Add Task with RACI -->
+<!-- Modal: Add Task with Project-Scoped RACI -->
 <div class="modal modal-blur fade" id="addTaskRaciModal" tabindex="-1" role="dialog" aria-hidden="true">
   <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
     <div class="modal-content">
@@ -309,16 +450,14 @@ $scheduleVar = getScheduleVariance($project['target_completion_date'], $estimate
           </div>
 
           <hr class="my-3">
-          <h4 class="mb-2 text-primary">RACI Matrix Assignment</h4>
-          <p class="text-secondary small mb-3">Select team members for each matrix responsibility role.</p>
-
-          <?php $allMembers = getTeamMembers(); ?>
+          <h4 class="mb-2 text-primary">RACI Matrix Assignment (Project Team)</h4>
+          <p class="text-secondary small mb-3">Selecting from members assigned to this project's Governance Teams.</p>
 
           <div class="row g-2">
             <div class="col-md-6 mb-3">
               <label class="form-label text-success fw-bold"><i class="ti ti-user-check me-1"></i>Responsible (R) - Doers</label>
               <select name="raci[R][]" class="form-select" multiple size="3">
-                <?php foreach ($allMembers as $tm): ?>
+                <?php foreach ($projectGovernanceMembers as $tm): ?>
                   <option value="<?= $tm['id'] ?>"><?= htmlspecialchars($tm['full_name']) ?></option>
                 <?php endforeach; ?>
               </select>
@@ -326,7 +465,7 @@ $scheduleVar = getScheduleVariance($project['target_completion_date'], $estimate
             <div class="col-md-6 mb-3">
               <label class="form-label text-blue fw-bold"><i class="ti ti-shield-check me-1"></i>Accountable (A) - Approver</label>
               <select name="raci[A][]" class="form-select" multiple size="3">
-                <?php foreach ($allMembers as $tm): ?>
+                <?php foreach ($projectGovernanceMembers as $tm): ?>
                   <option value="<?= $tm['id'] ?>"><?= htmlspecialchars($tm['full_name']) ?></option>
                 <?php endforeach; ?>
               </select>
@@ -334,7 +473,7 @@ $scheduleVar = getScheduleVariance($project['target_completion_date'], $estimate
             <div class="col-md-6 mb-3">
               <label class="form-label text-warning fw-bold"><i class="ti ti-messages me-1"></i>Consulted (C) - Advisors</label>
               <select name="raci[C][]" class="form-select" multiple size="3">
-                <?php foreach ($allMembers as $tm): ?>
+                <?php foreach ($projectGovernanceMembers as $tm): ?>
                   <option value="<?= $tm['id'] ?>"><?= htmlspecialchars($tm['full_name']) ?></option>
                 <?php endforeach; ?>
               </select>
@@ -342,7 +481,7 @@ $scheduleVar = getScheduleVariance($project['target_completion_date'], $estimate
             <div class="col-md-6 mb-3">
               <label class="form-label text-purple fw-bold"><i class="ti ti-bell me-1"></i>Informed (I) - Updates Only</label>
               <select name="raci[I][]" class="form-select" multiple size="3">
-                <?php foreach ($allMembers as $tm): ?>
+                <?php foreach ($projectGovernanceMembers as $tm): ?>
                   <option value="<?= $tm['id'] ?>"><?= htmlspecialchars($tm['full_name']) ?></option>
                 <?php endforeach; ?>
               </select>
@@ -411,7 +550,7 @@ $scheduleVar = getScheduleVariance($project['target_completion_date'], $estimate
             <div class="col-md-6 mb-3">
               <label class="form-label text-success fw-bold">Responsible (R)</label>
               <select name="raci[R][]" id="edit_raci_R" class="form-select" multiple size="3">
-                <?php foreach ($allMembers as $tm): ?>
+                <?php foreach ($projectGovernanceMembers as $tm): ?>
                   <option value="<?= $tm['id'] ?>"><?= htmlspecialchars($tm['full_name']) ?></option>
                 <?php endforeach; ?>
               </select>
@@ -419,7 +558,7 @@ $scheduleVar = getScheduleVariance($project['target_completion_date'], $estimate
             <div class="col-md-6 mb-3">
               <label class="form-label text-blue fw-bold">Accountable (A)</label>
               <select name="raci[A][]" id="edit_raci_A" class="form-select" multiple size="3">
-                <?php foreach ($allMembers as $tm): ?>
+                <?php foreach ($projectGovernanceMembers as $tm): ?>
                   <option value="<?= $tm['id'] ?>"><?= htmlspecialchars($tm['full_name']) ?></option>
                 <?php endforeach; ?>
               </select>
@@ -427,7 +566,7 @@ $scheduleVar = getScheduleVariance($project['target_completion_date'], $estimate
             <div class="col-md-6 mb-3">
               <label class="form-label text-warning fw-bold">Consulted (C)</label>
               <select name="raci[C][]" id="edit_raci_C" class="form-select" multiple size="3">
-                <?php foreach ($allMembers as $tm): ?>
+                <?php foreach ($projectGovernanceMembers as $tm): ?>
                   <option value="<?= $tm['id'] ?>"><?= htmlspecialchars($tm['full_name']) ?></option>
                 <?php endforeach; ?>
               </select>
@@ -435,7 +574,7 @@ $scheduleVar = getScheduleVariance($project['target_completion_date'], $estimate
             <div class="col-md-6 mb-3">
               <label class="form-label text-purple fw-bold">Informed (I)</label>
               <select name="raci[I][]" id="edit_raci_I" class="form-select" multiple size="3">
-                <?php foreach ($allMembers as $tm): ?>
+                <?php foreach ($projectGovernanceMembers as $tm): ?>
                   <option value="<?= $tm['id'] ?>"><?= htmlspecialchars($tm['full_name']) ?></option>
                 <?php endforeach; ?>
               </select>

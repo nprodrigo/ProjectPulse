@@ -6,62 +6,6 @@
 require_once __DIR__ . '/../config/database.php';
 
 /**
- * Fetch top summary stats for executive header/dashboard
- */
-function getDashboardMetrics() {
-    $db = getDBConnection();
-    if (!$db) {
-        return [
-            'total_projects' => 0,
-            'avg_progress' => 0,
-            'attention_needed' => 0,
-            'finishing_soon' => 0,
-            'total_pendings' => 0,
-        ];
-    }
-
-    try {
-        $totalProjects = $db->query("SELECT COUNT(*) FROM projects")->fetchColumn();
-        $avgProgress   = $db->query("SELECT COALESCE(ROUND(AVG(progress_percent)), 0) FROM projects WHERE status != 'Completed'")->fetchColumn();
-        $attention     = $db->query("SELECT COUNT(*) FROM projects WHERE needs_attention = 1 OR status = 'Needs Attention'")->fetchColumn();
-        
-        // Projects finishing within 30 days
-        $today = date('Y-m-d');
-        $thirtyDays = date('Y-m-d', strtotime('+30 days'));
-        $stmt = $db->prepare("SELECT COUNT(*) FROM projects WHERE target_completion_date BETWEEN :today AND :thirtyDays AND status != 'Completed'");
-        $stmt->execute(['today' => $today, 'thirtyDays' => $thirtyDays]);
-        $finishingSoon = $stmt->fetchColumn();
-
-        $openPendings = $db->query("SELECT COUNT(*) FROM pendings WHERE status != 'Resolved'")->fetchColumn();
-
-        return [
-            'total_projects'   => (int)$totalProjects,
-            'avg_progress'     => (int)$avgProgress,
-            'attention_needed' => (int)$attention,
-            'finishing_soon'   => (int)$finishingSoon,
-            'total_pendings'   => (int)$openPendings,
-        ];
-    } catch (PDOException $e) {
-        return [
-            'total_projects' => 0, 'avg_progress' => 0, 'attention_needed' => 0, 'finishing_soon' => 0, 'total_pendings' => 0
-        ];
-    }
-}
-
-/**
- * Get all project categories
- */
-function getCategories() {
-    $db = getDBConnection();
-    if (!$db) return [];
-    try {
-        return $db->query("SELECT * FROM categories ORDER BY id ASC")->fetchAll();
-    } catch (PDOException $e) {
-        return [];
-    }
-}
-
-/**
  * Fetch projects with optional filters (category, status, priority, search)
  */
 function getProjects($filters = []) {
@@ -115,25 +59,6 @@ function getProjects($filters = []) {
         return $stmt->fetchAll();
     } catch (PDOException $e) {
         return [];
-    }
-}
-
-/**
- * Fetch single project detail with category info
- */
-function getProjectById($id) {
-    $db = getDBConnection();
-    if (!$db) return null;
-
-    try {
-        $stmt = $db->prepare("SELECT p.*, c.name as category_name, c.color_code as category_color, c.slug as category_slug 
-                              FROM projects p 
-                              JOIN categories c ON p.category_id = c.id 
-                              WHERE p.id = :id");
-        $stmt->execute(['id' => $id]);
-        return $stmt->fetch() ?: null;
-    } catch (PDOException $e) {
-        return null;
     }
 }
 
@@ -252,19 +177,6 @@ function getPriorityBadgeClass($priority) {
 }
 
 /**
- * Get all Business Units
- */
-function getBusinessUnits() {
-    $db = getDBConnection();
-    if (!$db) return [];
-    try {
-        return $db->query("SELECT * FROM business_units ORDER BY name ASC")->fetchAll();
-    } catch (PDOException $e) {
-        return [];
-    }
-}
-
-/**
  * Add a daily log entry for a project
  */
 function addDailyLog($projectId, $logText, $isBlocked = 0) {
@@ -353,19 +265,6 @@ function getDailyReportData($targetDate = null) {
 }
 
 /**
- * Fetch all team members
- */
-function getTeamMembers() {
-    $db = getDBConnection();
-    if (!$db) return [];
-    try {
-        return $db->query("SELECT * FROM team_members ORDER BY full_name ASC")->fetchAll();
-    } catch (PDOException $e) {
-        return [];
-    }
-}
-
-/**
  * Fetch team members assigned to a specific project
  */
 function getProjectTeam($projectId) {
@@ -406,18 +305,32 @@ function updateProjectTeam($projectId, $memberIds = []) {
 }
 
 /**
- * Fetch tasks for a project with assignee details
+ * Fetch Project details by ID
+ */
+function getProjectById($id) {
+    $db = getDBConnection();
+    if (!$db) return false;
+    try {
+        $stmt = $db->prepare("SELECT p.*, c.name as category_name 
+                              FROM projects p 
+                              LEFT JOIN categories c ON p.category_id = c.id 
+                              WHERE p.id = :id");
+        $stmt->execute(['id' => (int)$id]);
+        return $stmt->fetch();
+        } catch (PDOException $e) {
+            return false;
+    }
+}
+
+/**
+ * Fetch all tasks for a project ordered by sort sequence
  */
 function getProjectTasks($projectId) {
     $db = getDBConnection();
     if (!$db) return [];
     try {
-        $stmt = $db->prepare("SELECT t.*, tm.full_name as assignee_name 
-                              FROM tasks t 
-                              LEFT JOIN team_members tm ON t.assigned_to = tm.id 
-                              WHERE t.project_id = :pid 
-                              ORDER BY FIELD(t.priority, 'Critical', 'High', 'Medium', 'Low'), t.due_date ASC");
-        $stmt->execute(['pid' => $projectId]);
+        $stmt = $db->prepare("SELECT * FROM tasks WHERE project_id = :pid ORDER BY sort_order ASC, id ASC");
+        $stmt->execute(['pid' => (int)$projectId]);
         return $stmt->fetchAll();
     } catch (PDOException $e) {
         return [];
@@ -425,24 +338,254 @@ function getProjectTasks($projectId) {
 }
 
 /**
- * Calculate Timeline Schedule Variance (Days Delayed / Ahead)
+ * Fetch all active team members
  */
-function getScheduleVariance($originalDate, $currentDate) {
-    if (!$originalDate || !$currentDate) {
-        return ['days' => 0, 'status' => 'On Time', 'class' => 'bg-success-lt'];
+function getTeamMembers() {
+    $db = getDBConnection();
+    if (!$db) return [];
+    try {
+        return $db->query("SELECT * FROM team_members ORDER BY full_name ASC")->fetchAll();
+    } catch (PDOException $e) {
+        return [];
+    }
+}
+
+/**
+ * Fetch all business units
+ */
+function getBusinessUnits() {
+    $db = getDBConnection();
+    if (!$db) return [];
+    try {
+        return $db->query("SELECT * FROM business_units ORDER BY name ASC")->fetchAll();
+    } catch (PDOException $e) {
+        return [];
+    }
+}
+
+/**
+ * Fetch all categories
+ */
+function getCategories() {
+    $db = getDBConnection();
+    if (!$db) return [];
+    try {
+        return $db->query("SELECT * FROM categories ORDER BY name ASC")->fetchAll();
+    } catch (PDOException $e) {
+        return [];
+    }
+}
+
+/**
+ * Fetch Dashboard Overview Metrics
+ */
+function getDashboardMetrics() {
+    $db = getDBConnection();
+    $default = ['total_projects' => 0, 'avg_progress' => 0, 'attention_needed' => 0, 'finishing_soon' => 0];
+    if (!$db) return $default;
+
+    try {
+        $total = $db->query("SELECT COUNT(*) FROM projects")->fetchColumn();
+        $avg   = round($db->query("SELECT IFNULL(AVG(progress_percent), 0) FROM projects")->fetchColumn());
+        $att   = $db->query("SELECT COUNT(*) FROM projects WHERE needs_attention = 1 OR status = 'Needs Attention'")->fetchColumn();
+        $soon  = $db->query("SELECT COUNT(*) FROM projects WHERE target_completion_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 14 DAY)")->fetchColumn();
+
+        return [
+            'total_projects'   => (int)$total,
+            'avg_progress'     => (int)$avg,
+            'attention_needed' => (int)$att,
+            'finishing_soon'   => (int)$soon
+        ];
+    } catch (PDOException $e) {
+        return $default;
+    }
+}
+
+/**
+ * Calculate Baseline Schedule Variance Status
+ */
+function getScheduleVariance($expectedDate, $calculatedDate) {
+    if (!$expectedDate || !$calculatedDate) {
+        return ['status' => 'On Time', 'class' => 'bg-success-lt text-success'];
     }
     
-    $origTS = strtotime($originalDate);
-    $currTS = strtotime($currentDate);
-    $diffDays = (int)round(($currTS - $origTS) / 86400);
+    $expected = new DateTime($expectedDate);
+    $actual   = new DateTime($calculatedDate);
+    $diff     = $expected->diff($actual);
 
-    if ($diffDays > 0) {
-        return ['days' => $diffDays, 'status' => "+{$diffDays} Days Delayed", 'class' => 'bg-danger-lt'];
-    } elseif ($diffDays < 0) {
-        $ahead = abs($diffDays);
-        return ['days' => $diffDays, 'status' => "-{$ahead} Days Ahead", 'class' => 'bg-success-lt'];
+    if ($actual > $expected) {
+        return ['status' => '+' . $diff->days . ' Days Delayed', 'class' => 'bg-danger-lt text-danger'];
+    } elseif ($actual < $expected) {
+        return ['status' => $diff->days . ' Days Ahead', 'class' => 'bg-success-lt text-success'];
     }
-    return ['days' => 0, 'status' => 'On Schedule', 'class' => 'bg-info-lt'];
+    return ['status' => 'On Schedule', 'class' => 'bg-success-lt text-success'];
+}
+
+/**
+ * Validate and round effort to nearest 0.5 increment (Min: 0.5)
+ */
+function sanitizeDays($value) {
+    $val = (float)$value;
+    if ($val < 0.5) return 0.5;
+    return round($val * 2) / 2;
+}
+
+/**
+ * Fetch configured holiday dates
+ */
+function getHolidaysList() {
+    $db = getDBConnection();
+    if (!$db) return [];
+    try {
+        return $db->query("SELECT holiday_date FROM holidays")->fetchAll(PDO::FETCH_COLUMN);
+    } catch (PDOException $e) {
+        return [];
+    }
+}
+
+/**
+ * Check if a date is a working business day (Non-Weekend & Non-Holiday)
+ */
+function isWorkingDay(DateTime $date, array $holidays = []) {
+    $dayOfWeek = (int)$date->format('N');
+    if ($dayOfWeek >= 6) return false;
+    if (in_array($date->format('Y-m-d'), $holidays)) return false;
+    return true;
+}
+
+/**
+ * Add working business days to a starting date
+ */
+function addBusinessDays(DateTime $startDate, $daysToAdd, array $holidays = []) {
+    $currentDate = clone $startDate;
+    
+    while (!isWorkingDay($currentDate, $holidays)) {
+        $currentDate->modify('+1 day');
+    }
+
+    $remainingDays = max(1, ceil((float)$daysToAdd)) - 1;
+    while ($remainingDays > 0) {
+        $currentDate->modify('+1 day');
+        if (isWorkingDay($currentDate, $holidays)) {
+            $remainingDays -= 1;
+        }
+    }
+    return $currentDate;
+}
+
+/**
+ * Recalculate Project Task Schedules skipping Weekends & Holidays
+ */
+function recalculateProjectSchedule($projectId) {
+    $db = getDBConnection();
+    if (!$db) return;
+
+    $holidays = getHolidaysList();
+
+    $stmtP = $db->prepare("SELECT start_date FROM projects WHERE id = :pid");
+    $stmtP->execute(['pid' => $projectId]);
+    $projectStart = $stmtP->fetchColumn() ?: date('Y-m-d');
+
+    $stmtT = $db->prepare("SELECT id, current_days FROM tasks WHERE project_id = :pid ORDER BY sort_order ASC, id ASC");
+    $stmtT->execute(['pid' => $projectId]);
+    $tasks = $stmtT->fetchAll();
+
+    $cursorDate = new DateTime($projectStart);
+    $stmtUpd = $db->prepare("UPDATE tasks SET start_date = :sdate, due_date = :ddate WHERE id = :tid");
+
+    foreach ($tasks as $task) {
+        while (!isWorkingDay($cursorDate, $holidays)) {
+            $cursorDate->modify('+1 day');
+        }
+        $startDateStr = $cursorDate->format('Y-m-d');
+
+        $effortDays = max(0.5, (float)$task['current_days']);
+        $dueDateObj = addBusinessDays($cursorDate, $effortDays, $holidays);
+        $dueDateStr = $dueDateObj->format('Y-m-d');
+
+        $stmtUpd->execute([
+            'sdate' => $startDateStr,
+            'ddate' => $dueDateStr,
+            'tid'   => $task['id']
+        ]);
+
+        $cursorDate = clone $dueDateObj;
+        $cursorDate->modify('+1 day');
+    }
+
+    if (!empty($tasks)) {
+        $stmtLast = $db->prepare("SELECT MAX(due_date) FROM tasks WHERE project_id = :pid");
+        $stmtLast->execute(['pid' => $projectId]);
+        $maxDueDate = $stmtLast->fetchColumn();
+
+        if ($maxDueDate) {
+            $stmtProjUpd = $db->prepare("UPDATE projects SET target_completion_date = :maxdate WHERE id = :pid");
+            $stmtProjUpd->execute(['maxdate' => $maxDueDate, 'pid' => $projectId]);
+        }
+    }
+}
+
+/**
+ * Calculate Schedule Time Elapsed % between Start Date and Target Date as of today (Working Days)
+ */
+function getScheduleElapsedPercent($startDateStr, $targetDateStr) {
+    if (!$startDateStr || !$targetDateStr) return 0;
+
+    $holidays = getHolidaysList();
+    $start    = new DateTime($startDateStr);
+    $target   = new DateTime($targetDateStr);
+    $today    = new DateTime(date('Y-m-d'));
+
+    if ($today <= $start)  return 0;
+    if ($today >= $target) return 100;
+
+    $totalDays = 0;
+    $curr = clone $start;
+    while ($curr <= $target) {
+        if (isWorkingDay($curr, $holidays)) {
+            $totalDays++;
+        }
+        $curr->modify('+1 day');
+    }
+
+    if ($totalDays <= 0) return 100;
+
+    $elapsedDays = 0;
+    $curr = clone $start;
+    while ($curr < $today) {
+        if (isWorkingDay($curr, $holidays)) {
+            $elapsedDays++;
+        }
+        $curr->modify('+1 day');
+    }
+
+    return min(100, round(($elapsedDays / $totalDays) * 100));
+}
+
+/**
+ * Calculate Work Completion Progress based on completed task effort vs total task effort
+ */
+function getTaskWeightedProgress($projectId) {
+    $db = getDBConnection();
+    if (!$db) return 0;
+
+    try {
+        $stmt = $db->prepare("SELECT 
+                                SUM(current_days) as total_days,
+                                SUM(CASE WHEN status = 'Completed' THEN current_days ELSE 0 END) as completed_days
+                              FROM tasks WHERE project_id = :pid");
+        $stmt->execute(['pid' => $projectId]);
+        $res = $stmt->fetch();
+
+        $total = (float)($res['total_days'] ?? 0);
+        $done  = (float)($res['completed_days'] ?? 0);
+
+        if ($total <= 0) return 0;
+
+        return min(100, round(($done / $total) * 100));
+    } catch (PDOException $e) {
+        return 0;
+    }
 }
 
 /**
@@ -498,113 +641,20 @@ function saveRaciRoles($entityType, $entityId, $raciData) {
 }
 
 /**
- * Validate and round effort to nearest 0.5 increment (Min: 0.5)
+ * Fetch team members assigned to any Governance Team in a given project
  */
-function sanitizeDays($value) {
-    $val = (float)$value;
-    if ($val < 0.5) return 0.5;
-    return round($val * 2) / 2;
-}
-
-/**
- * Fetch all configured holiday dates (YYYY-MM-DD)
- */
-function getHolidaysList() {
+function getProjectGovernanceMembers($projectId) {
     $db = getDBConnection();
     if (!$db) return [];
     try {
-        return $db->query("SELECT holiday_date FROM holidays")->fetchAll(PDO::FETCH_COLUMN);
+        $stmt = $db->prepare("SELECT DISTINCT tm.id, tm.full_name, tm.role_title 
+                              FROM team_members tm
+                              JOIN project_team_roles ptr ON tm.id = ptr.member_id
+                              WHERE ptr.project_id = :pid
+                              ORDER BY tm.full_name ASC");
+        $stmt->execute(['pid' => $projectId]);
+        return $stmt->fetchAll();
     } catch (PDOException $e) {
         return [];
-    }
-}
-
-/**
- * Check if a date is a working business day (Non-Weekend & Non-Holiday)
- */
-function isWorkingDay(DateTime $date, array $holidays = []) {
-    $dayOfWeek = (int)$date->format('N'); // 1 (Mon) to 7 (Sun)
-    if ($dayOfWeek >= 6) {
-        return false; // Weekend
-    }
-    if (in_array($date->format('Y-m-d'), $holidays)) {
-        return false; // Public / Company Holiday
-    }
-    return true;
-}
-
-/**
- * Add working business days to a starting date
- */
-function addBusinessDays(DateTime $startDate, $daysToAdd, array $holidays = []) {
-    $currentDate = clone $startDate;
-    
-    // Ensure starting date is a working day
-    while (!isWorkingDay($currentDate, $holidays)) {
-        $currentDate->modify('+1 day');
-    }
-
-    $remainingDays = max(1, ceil((float)$daysToAdd)) - 1;
-    while ($remainingDays > 0) {
-        $currentDate->modify('+1 day');
-        if (isWorkingDay($currentDate, $holidays)) {
-            $remainingDays -= 1;
-        }
-    }
-    return $currentDate;
-}
-
-/**
- * Recalculate Project Task Schedules skipping Weekends & Holidays
- */
-function recalculateProjectSchedule($projectId) {
-    $db = getDBConnection();
-    if (!$db) return;
-
-    $holidays = getHolidaysList();
-
-    // 1. Fetch project baseline start date
-    $stmtP = $db->prepare("SELECT start_date FROM projects WHERE id = :pid");
-    $stmtP->execute(['pid' => $projectId]);
-    $projectStart = $stmtP->fetchColumn() ?: date('Y-m-d');
-
-    // 2. Fetch project tasks ordered by sequence
-    $stmtT = $db->prepare("SELECT id, current_days FROM tasks WHERE project_id = :pid ORDER BY sort_order ASC, id ASC");
-    $stmtT->execute(['pid' => $projectId]);
-    $tasks = $stmtT->fetchAll();
-
-    $cursorDate = new DateTime($projectStart);
-    $stmtUpd = $db->prepare("UPDATE tasks SET start_date = :sdate, due_date = :ddate WHERE id = :tid");
-
-    foreach ($tasks as $task) {
-        while (!isWorkingDay($cursorDate, $holidays)) {
-            $cursorDate->modify('+1 day');
-        }
-        $startDateStr = $cursorDate->format('Y-m-d');
-
-        $effortDays = max(0.5, (float)$task['current_days']);
-        $dueDateObj = addBusinessDays($cursorDate, $effortDays, $holidays);
-        $dueDateStr = $dueDateObj->format('Y-m-d');
-
-        $stmtUpd->execute([
-            'sdate' => $startDateStr,
-            'ddate' => $dueDateStr,
-            'tid'   => $task['id']
-        ]);
-
-        $cursorDate = clone $dueDateObj;
-        $cursorDate->modify('+1 day');
-    }
-
-    // 3. Update overall project target date
-    if (!empty($tasks)) {
-        $stmtLast = $db->prepare("SELECT MAX(due_date) FROM tasks WHERE project_id = :pid");
-        $stmtLast->execute(['pid' => $projectId]);
-        $maxDueDate = $stmtLast->fetchColumn();
-
-        if ($maxDueDate) {
-            $stmtProjUpd = $db->prepare("UPDATE projects SET target_completion_date = :maxdate WHERE id = :pid");
-            $stmtProjUpd->execute(['maxdate' => $maxDueDate, 'pid' => $projectId]);
-        }
     }
 }

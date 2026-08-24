@@ -379,6 +379,34 @@ switch ($action) {
         }
         echo json_encode(['success' => false, 'message' => 'Invalid task list or project ID']);
         exit;
+
+        // Inside api.php -> switch ($action)
+
+case 'update_governance_teams':
+    $projectId = (int)($_POST['project_id'] ?? 0);
+    $teams     = $_POST['teams'] ?? [];
+
+    if ($projectId > 0) {
+        $db = getDBConnection();
+        
+        // Clear existing governance roles for project
+        $stmtDel = $db->prepare("DELETE FROM project_team_roles WHERE project_id = :pid");
+        $stmtDel->execute(['pid' => $projectId]);
+
+        // Re-insert selected roles
+        $stmtIns = $db->prepare("INSERT INTO project_team_roles (project_id, member_id, team_type) VALUES (:pid, :mid, :type)");
+        foreach ($teams as $type => $memberIds) {
+            if (is_array($memberIds)) {
+                foreach ($memberIds as $mid) {
+                    $stmtIns->execute(['pid' => $projectId, 'mid' => (int)$mid, 'type' => $type]);
+                }
+            }
+        }
+
+        header("Location: project_detail.php?id=" . $projectId);
+        exit;
+    }
+    break;
 }
 
 header("Location: index.php");

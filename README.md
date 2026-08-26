@@ -1,97 +1,142 @@
-Here is an updated **`README.md`** file that reflects your expanded architecture, including **Business Units (BUs)**, **Daily Updates/Logs**, **Weekly Executive Reporting**, and the updated high-contrast light-slate UI.
+# ProjectPulse Executive Tracker
 
-You can replace your current `README.md` with the following content:
-
-```markdown
-# ProjectPulse - Multi-BU Project Tracker & Daily Update System
-
-A modern, executive project management dashboard built with **PHP** and **MySQL** to manage, track, and log daily updates across multiple **Business Units (BUs)** and project categories:
-- 🚀 **Software Development**
-- 📦 **Software Implementation**
-- 🖥️ **Infrastructure Upgrades**
-- 📄 **Documentation Projects**
-
-Designed to answer critical management questions at a glance:
-1. **"What finishes when?"** (Chronological target completion timeline & milestone roadmap)
-2. **"What needs my attention?"** (Active project blockers, delayed deliverables, and urgent action items)
-3. **"What happened this week?"** (Automated weekly status rollups for management across all Business Units)
+**ProjectPulse** is an executive-grade Project Management and Delivery Tracking dashboard built using PHP, MySQL, and the Tabler (Bootstrap 5) UI framework. It features automated sequential business-day scheduling, RACI matrix role mapping, dual progress KPI calculations, and multi-tier role-based access control (RBAC).
 
 ---
 
-## 🛠️ Tech Stack & Server Architecture
+## Key Features
 
-- **Backend:** PHP 8.x (PDO MySQL extension required)
-- **Database:** MySQL 5.7+ / MySQL 8.0+ / MariaDB (Supports both local and remote hosting)
-- **Frontend:** Vanilla JS (`app.js`), FontAwesome 6, and a clean, high-contrast Slate CSS UI framework
+* **Sequential Task Scheduling & Auto-Cascade**: Automatically calculates task `start_date` and `due_date` values sequentially based on 0.5-day effort increments, skipping weekends and configured public holidays.
+* **Dual-Progress KPI Engine**:
+  * **Schedule Time Elapsed (%)**: Business-day time pace relative to project start and committed deadline.
+  * **Actual Work Completed (%)**: Effort-weighted progress derived from completed tasks ($\frac{\text{Completed Days}}{\text{Total Days}} \times 100$) with manual override capability.
+* **RACI Matrix Assignment**: Assign team members as **R**esponsible, **A**ccountable, **C**onsulted, or **I**nformed per task.
+* **Project Governance Teams**: Categorize team members into *Strategic*, *Functional*, *Technical*, *Project Management*, or *Viewer* roles per project.
+* **Role-Based Access Control (RBAC)**: Unified authentication directly via team profiles with project-level access boundaries.
+* **Sequence Order Swapping**: Reorder tasks up and down with instant schedule recalculation across the entire delivery timeline.
+* **Print & Executive PDF Export**: High-resolution print-optimized view for board reports and client updates.
+* **Dynamic Environment Database Switching**: Auto-detects local development vs. cloud production server configurations via HTTP Host inspection.
 
-### Database Configuration (`config/database.php`)
+---
 
-Connection settings can be configured directly in `config/database.php` or passed via environment variables:
+## Tech Stack & Architecture
 
-```php
-define('DB_HOST', getenv('DB_HOST') ?: 'localhost');
-define('DB_PORT', getenv('DB_PORT') ?: '3306');
-define('DB_NAME', getenv('DB_NAME') ?: 'project_tracker');
-define('DB_USER', getenv('DB_USER') ?: 'db_username');
-define('DB_PASS', getenv('DB_PASS') ?: 'db_password');
+* **Backend**: PHP 8.x (PDO MySQL)
+* **Frontend**: HTML5, Tabler UI (Bootstrap 5), Tabler Webfont Icons, JavaScript (Fetch API)
+* **Database**: MySQL / MariaDB (utf8mb4)
+* **Authentication**: BCRYPT Hashed Passwords (`password_hash` / `password_verify`)
 
+---
+
+## Directory Structure
+
+```text
+├── config/
+│   └── database.php       # Dynamic host-based DB connection builder
+├── includes/
+│   ├── functions.php      # System calculation engine, RACI logic, & RBAC helpers
+│   ├── header.php         # 2-Tier dark executive navigation & user profile
+│   └── footer.php         # Page wrapper, script bindings, & project modal
+├── api.php                # Centralized POST/GET AJAX & form action handler
+├── index.php              # Executive metrics & project overview dashboard
+├── projects.php           # Role-scoped project directory
+├── project_detail.php     # Comprehensive project detail view, task list, & RACI matrix
+├── team.php               # Global team directory & user credential management
+├── login.php              # Authentication page
+└── logout.php             # Session termination script
 ```
 
 ---
 
-## 🚀 Quickstart Setup Instructions
+## User Roles & Access Control
 
-### Step 1: Import Database Schema & Migration
+Access control is governed by a unified model where `team_members` double as system users:
 
-Import `sql/schema.sql` (or run `update_schema.sql`) into your MySQL server via **phpMyAdmin**, **MySQL Workbench**, or the CLI:
+1. **System Admin (`admin`)**:
+* Complete visibility across all projects and metrics.
+* Can create, update, reorder, or delete any project, task, or team member.
 
-```bash
-mysql -h <DB_HOST> -u <DB_USER> -p project_tracker < sql/schema.sql
+2. **Standard User / Project Manager (`user`)**:
+* Granted **Edit Access** to projects where designated as the Project Manager or assigned to a Governance Team (*Strategic*, *Functional*, *Technical*, *PM*).
+* Restricted from modifying projects outside their roster.
 
-```
-
-### Step 2: Configure Web Server
-
-#### Option A: PHP Built-in Server (Local CLI)
-
-Navigate to the project root directory and run:
-
-```bash
-php -S 0.0.0.0:8000
-
-```
-
-Open `http://localhost:8000` in your web browser.
-
-#### Option B: Apache / Nginx / cPanel / Shared Hosting
-
-1. Upload all project files to your server document root (e.g., `/var/www/html/project` or `public_html/project`).
-2. Ensure `pdo_mysql` is enabled in your `php.ini`.
-3. Access `http://your-domain.com/project/` in your browser.
+3. **Project Viewer (`user` + `Viewer` Governance Role)**:
+* Granted **Read-Only Access** to assigned projects.
+* All edit buttons, task creation modals, scope adjustment inputs, and reordering arrows are automatically hidden.
 
 ---
 
-## 📊 Dashboard Views & Modules
+## Core System Processes
 
-| View / File | Description & Functionality |
+### 1. Sequential Business-Day Schedule Calculation
+
+When a task is added, edited, or reordered, `recalculateProjectSchedule($projectId)` performs a forward-pass schedule calculation:
+
+1. Fetches public holiday dates from the `holidays` table.
+2. Evaluates working business days (omitting Saturdays, Sundays, and holidays).
+3. Sequentially maps task start dates to the completion date of the preceding task.
+4. Auto-updates the master project `target_completion_date` based on the final task's finish date.
+
+### 2. Dual Progress KPI Calculation
+
+* **Time Pace**: Calculated via `getScheduleElapsedPercent()`, measuring elapsed business days as of today against total planned business days.
+* **Task-Weighted Work Progress**: Calculated via `getTaskWeightedProgress()`, taking the sum of `current_days` for tasks marked `Completed` divided by the total sum of `current_days` across all tasks.
+* **Auto-Sync**: Toggling a task status automatically recalculates and syncs the weighted completion percentage to the project table.
+
+---
+
+## Key Backend Functions (`includes/functions.php`)
+
+| Function Signature | Description |
 | --- | --- |
-| **Executive Overview** (`index.php`) | High-level metrics, BU & category filtering, real-time search, interactive project cards, and blocker alerts. |
-| **Daily Progress Workspace** (`daily_log.php`) | Single-page update workspace to log daily progress notes across projects and flag blockers instantly. |
-| **Weekly Status Report** (`weekly_report.php`) | Aggregates daily updates from the past 7 days grouped by **Business Unit → Project**, ready for print/PDF export. |
-| **All Projects Directory** (`projects.php`) | Tabular listing of projects with completion status, target completion dates, and project managers. |
-| **"What Finishes When"** (`timeline.php`) | Chronological roadmap grouping projects by target completion month. |
-| **"Needs Attention" Center** (`attention.php`) | Isolates projects flagged with active blockers and lists open action items requiring attention. |
+| `getDBConnection()` | Establishes or returns the static PDO connection (auto-selects local vs. cloud). |
+| `getProjectById($id)` | Retrieves detailed project info including category names. |
+| `getProjectTasks($projectId)` | Returns task list ordered by `sort_order ASC`. |
+| `getTeamMembers()` | Fetches all global team member records. |
+| `getDashboardMetrics()` | Computes total accessible projects, average completion, and blocked counts. |
+| `isWorkingDay(DateTime $date, array $holidays)` | Evaluates if a given date is a non-weekend and non-holiday working day. |
+| `addBusinessDays(DateTime $start, $days, $holidays)` | Adds effort days to a date skipping non-working days. |
+| `recalculateProjectSchedule($projectId)` | Cascades business-day start/due dates across all sequential tasks. |
+| `getScheduleElapsedPercent($startDate, $targetDate)` | Computes time pace percentage as of today. |
+| `getTaskWeightedProgress($projectId)` | Computes effort-weighted task completion percentage. |
+| `getRaciAssignments($entityType, $entityId)` | Returns associative array (`R`, `A`, `C`, `I`) of assigned members. |
+| `saveRaciRoles($entityType, $entityId, $raciData)` | Saves RACI role assignments for a task or milestone. |
+| `getProjectGovernanceMembers($projectId)` | Retrieves team members assigned to any Governance Team in a project. |
+| `getProjectMemberRole($projectId, $memberId)` | Resolves a member's effective permission level on a given project. |
+| `canViewProject($projectId)` | Returns `true` if current user is permitted to view the project. |
+| `canEditProject($projectId)` | Returns `true` if current user is permitted to edit the project. |
+| `getAccessibleProjectsQuery()` | Generates role-scoped SQL query for project listings. |
 
 ---
 
-## 🔒 Remote MySQL Troubleshooting Checklist
+## API Action Handlers (`api.php`)
 
-If hosting the database remotely:
+| Endpoint Action (`POST`) | Description |
+| --- | --- |
+| `create_project` | Inserts a new project, sets initial schedule, and triggers initial recalculation. |
+| `update_project` | Updates manual completion %, status, priority, and attention flags. |
+| `update_governance_teams` | Saves Governance Team members (*Strategic*, *Functional*, *Technical*, *PM*, *Viewer*). |
+| `create_task_raci` | Inserts a sequential task, assigns RACI roles, and recalculates timeline. |
+| `update_task_raci` | Updates task scope/actual days/status, updates RACI, and syncs progress. |
+| `swap_task_order` | Swaps `sort_order` between adjacent tasks (`up`/`down`) and recalculates schedule. |
+| `toggle_task` | Quick-toggles task status to `Completed` and auto-syncs project progress. |
+| `add_daily_log` | Logs daily progress entries and blockage flags. |
 
-1. **Firewall Access:** Ensure MySQL port `3306` is allowed on the remote database server.
-2. **User Privileges:** Verify the user account allows remote access (`'db_username'@'%'`).
-3. **Database Port Variable:** Ensure `DB_PORT` is correctly set in `config/database.php`.
+---
 
-```
+## Installation & Setup
 
-```
+1. **Clone/Upload Repository**: Place files in your web server root (e.g., `/var/www/html` or `htdocs`).
+
+2. **Configure Database**:
+* Edit `config/database.php` to adjust local and cloud database credentials.
+
+3. **Initialize Database Schema**:
+* Execute the database migration scripts (`update_unified_team.sql`) or run `reset_passwords.php` once in your browser.
+
+4. **Default Credentials**:
+* **Admin**: `admin` / `Password123!`
+* **User / PM**: `chamila` / `Password123!`
+* **Viewer**: `auditor` / `Password123!`
+
+5. **Security Cleanup**: Remove setup scripts (`reset_passwords.php`, `migrate.php`) prior to production deployment.

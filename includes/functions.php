@@ -658,3 +658,90 @@ function getProjectGovernanceMembers($projectId) {
         return [];
     }
 }
+
+/**
+ * Role Check Helpers (Case-Insensitive)
+ */
+function isAdmin() {
+    return isset($_SESSION['system_role']) && strtolower($_SESSION['system_role']) === 'admin';
+}
+
+function isPM() {
+    return isset($_SESSION['role']) && strtolower($_SESSION['role']) === 'pm';
+}
+
+function isViewer() {
+    return isset($_SESSION['role']) && strtolower($_SESSION['role']) === 'viewer';
+}
+
+/**
+ * Get logged-in Team Member ID
+ */
+function getLoggedInMemberId() {
+    return $_SESSION['member_id'] ?? 0;
+}
+
+/**
+ * Check View Permission
+ */
+function canViewProject($projectId) {
+    if (isAdmin()) return true;
+    $role = getProjectMemberRole($projectId);
+    return $role !== false;
+}
+
+/**
+ * Check Edit Permission (Admins, PMs, and assigned Team Members can edit; Viewers cannot)
+ */
+function canEditProject($projectId) {
+    if (isAdmin()) return true;
+    $role = getProjectMemberRole($projectId);
+    return in_array($role, ['Project Manager', 'Team Member']);
+}
+
+/**
+ * Get SQL query for accessible projects based on Governance Membership
+ */
+function getAccessibleProjectsQuery() {
+    if (isAdmin()) {
+        return "SELECT p.*, c.name as category_name FROM projects p LEFT JOIN categories c ON p.category_id = c.id ORDER BY p.id DESC";
+    }
+
+    $mid = (int)getLoggedInMemberId();
+
+    return "SELECT DISTINCT p.*, c.name as category_name 
+            FROM projects p 
+            LEFT JOIN categories c ON p.category_id = c.id 
+            LEFT JOIN project_team_roles ptr ON p.id = ptr.project_id 
+            WHERE p.manager_id = {$mid} OR ptr.member_id = {$mid} 
+            ORDER BY p.id DESC";
+}
+
+/**
+ * Fetch member's assigned role on a specific project
+ * Returns: 'Project Manager', 'Team Member', 'Viewer', or false if not assigned
+ */
+function getProjectMemberRole($projectId, $memberId = null) {
+    if (isAdmin()) return 'Admin';
+
+    $mid = $memberId ?: getLoggedInMemberId();
+    if (!$mid || !$projectId) return false;
+
+    $db = getDBConnection();
+    if (!$db) return false;
+
+    // Check if member is designated as the Project Manager on the project record
+    $stmtM = $db->prepare("SELECT COUNT(*) FROM projects WHERE id = :pid AND manager_id = :mid");
+    $stmtM->execute(['pid' => $projectId, 'mid' => $mid]);
+    if ($stmtM->fetchColumn() > 0) return 'Project Manager';
+
+    // Check Governance Team role assignment
+    $stmtG = $db->prepare("SELECT team_type FROM project_team_roles WHERE project_id = :pid AND member_id = :mid LIMIT 1");
+    $stmtG->execute(['pid' => $projectId, 'mid' => $mid]);
+    $teamType = $stmtG->fetchColumn();
+
+    if ($teamType === 'Viewer') return 'Viewer';
+    if ($teamType) return 'Team Member';
+
+    return false; // Not a member of this project
+}

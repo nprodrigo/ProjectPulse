@@ -8,7 +8,7 @@ require_once __DIR__ . '/config/database.php';
 require_once __DIR__ . '/includes/functions.php';
 
 // Authentication Guard
-if (!isset($_SESSION['user_id'])) {
+if (!isset($_SESSION['user_id']) && !isset($_SESSION['member_id'])) {
     if (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest') {
         header('Content-Type: application/json');
         echo json_encode(['success' => false, 'message' => 'Unauthorized access.']);
@@ -33,6 +33,18 @@ if (!$db) {
 }
 
 $action = $_POST['action'] ?? $_GET['action'] ?? '';
+
+// Helper function to auto-sync task-weighted progress to the main project record
+function syncProjectTaskProgress($projectId) {
+    $db = getDBConnection();
+    if (!$db || $projectId <= 0) return;
+    
+    $weightedProgress = getTaskWeightedProgress($projectId);
+    $status = ($weightedProgress >= 100) ? 'Completed' : 'In Progress';
+
+    $stmt = $db->prepare("UPDATE projects SET progress_percent = :progress, status = :status WHERE id = :pid");
+    $stmt->execute(['progress' => $weightedProgress, 'status' => $status, 'pid' => $projectId]);
+}
 
 switch ($action) {
 
@@ -151,6 +163,28 @@ switch ($action) {
         echo json_encode(['success' => false, 'message' => 'Invalid project ID']);
         exit;
 
+    case 'update_governance_teams':
+        $projectId = (int)($_POST['project_id'] ?? 0);
+        $teams     = $_POST['teams'] ?? [];
+
+        if ($projectId > 0) {
+            $stmtDel = $db->prepare("DELETE FROM project_team_roles WHERE project_id = :pid");
+            $stmtDel->execute(['pid' => $projectId]);
+
+            $stmtIns = $db->prepare("INSERT INTO project_team_roles (project_id, member_id, team_type) VALUES (:pid, :mid, :type)");
+            foreach ($teams as $type => $memberIds) {
+                if (is_array($memberIds)) {
+                    foreach ($memberIds as $mid) {
+                        $stmtIns->execute(['pid' => $projectId, 'mid' => (int)$mid, 'type' => $type]);
+                    }
+                }
+            }
+
+            header("Location: project_detail.php?id=" . $projectId);
+            exit;
+        }
+        break;
+
     // ----------------------------------------------------------------------
     // 2. Daily Logs & Issues Tracking
     // ----------------------------------------------------------------------
@@ -256,6 +290,7 @@ switch ($action) {
             }
 
             recalculateProjectSchedule($projectId);
+            syncProjectTaskProgress($projectId);
 
             header("Location: project_detail.php?id=" . $projectId);
             exit;
@@ -302,6 +337,7 @@ switch ($action) {
             }
 
             recalculateProjectSchedule($projectId);
+            syncProjectTaskProgress($projectId);
 
             header("Location: project_detail.php?id=" . $projectId);
             exit;
@@ -354,8 +390,17 @@ switch ($action) {
         $newStatus = $_POST['status'] ?? 'Completed';
 
         if ($taskId > 0) {
+            $stmtT = $db->prepare("SELECT project_id FROM tasks WHERE id = :id");
+            $stmtT->execute(['id' => $taskId]);
+            $pid = $stmtT->fetchColumn();
+
             $stmt = $db->prepare("UPDATE tasks SET status = :status WHERE id = :id");
             $stmt->execute(['status' => $newStatus, 'id' => $taskId]);
+
+            if ($pid) {
+                syncProjectTaskProgress($pid);
+            }
+
             echo json_encode(['success' => true]);
             exit;
         }
@@ -379,34 +424,6 @@ switch ($action) {
         }
         echo json_encode(['success' => false, 'message' => 'Invalid task list or project ID']);
         exit;
-
-        // Inside api.php -> switch ($action)
-
-case 'update_governance_teams':
-    $projectId = (int)($_POST['project_id'] ?? 0);
-    $teams     = $_POST['teams'] ?? [];
-
-    if ($projectId > 0) {
-        $db = getDBConnection();
-        
-        // Clear existing governance roles for project
-        $stmtDel = $db->prepare("DELETE FROM project_team_roles WHERE project_id = :pid");
-        $stmtDel->execute(['pid' => $projectId]);
-
-        // Re-insert selected roles
-        $stmtIns = $db->prepare("INSERT INTO project_team_roles (project_id, member_id, team_type) VALUES (:pid, :mid, :type)");
-        foreach ($teams as $type => $memberIds) {
-            if (is_array($memberIds)) {
-                foreach ($memberIds as $mid) {
-                    $stmtIns->execute(['pid' => $projectId, 'mid' => (int)$mid, 'type' => $type]);
-                }
-            }
-        }
-
-        header("Location: project_detail.php?id=" . $projectId);
-        exit;
-    }
-    break;
 }
 
 header("Location: index.php");

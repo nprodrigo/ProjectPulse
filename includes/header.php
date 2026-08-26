@@ -1,7 +1,8 @@
 <?php
 session_start();
 
-if (!isset($_SESSION['user_id'])) {
+// Authentication Guard
+if (!isset($_SESSION['user_id']) && !isset($_SESSION['member_id'])) {
     header('Location: login.php');
     exit;
 }
@@ -11,7 +12,9 @@ require_once __DIR__ . '/functions.php';
 $currentPage = basename($_SERVER['PHP_SELF']);
 $metrics     = getDashboardMetrics();
 $categories  = getCategories();
-$dbConnected = (getDBConnection() !== null);
+
+$userName   = $_SESSION['full_name'] ?? 'User';
+$systemRole = ucfirst($_SESSION['system_role'] ?? 'User');
 ?>
 <!doctype html>
 <html lang="en">
@@ -31,12 +34,15 @@ $dbConnected = (getDBConnection() !== null);
       border-bottom: 1px solid rgba(255, 255, 255, 0.08);
       padding-top: 0.65rem;
       padding-bottom: 0.65rem;
+      position: relative;
+      z-index: 1045; /* Higher than sticky nav to allow dropdown overflow */
     }
 
     .header-tier-nav {
       background-color: #0f172a !important;
       border-bottom: 2px solid #334155 !important;
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+      z-index: 1030;
     }
 
     .navbar-brand span {
@@ -73,12 +79,52 @@ $dbConnected = (getDBConnection() !== null);
     .user-pill {
       background: rgba(255, 255, 255, 0.05);
       border: 1px solid rgba(255, 255, 255, 0.1);
-      padding: 0.3rem 0.65rem;
+      padding: 0.35rem 0.75rem;
       border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.2s ease;
     }
 
-    .user-pill:hover {
-      background: rgba(255, 255, 255, 0.1);
+    .user-pill:hover, .user-pill[aria-expanded="true"] {
+      background: rgba(255, 255, 255, 0.12);
+    }
+
+    /* Dark Theme Dropdown Menu Styling Fixes */
+    .header-dropdown-menu {
+      background-color: #1e293b !important;
+      border: 1px solid rgba(255, 255, 255, 0.15) !important;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5) !important;
+      border-radius: 8px !important;
+      min-width: 200px;
+      padding: 0.5rem 0;
+      margin-top: 0.5rem !important;
+      z-index: 1060 !important;
+    }
+
+    .header-dropdown-menu .dropdown-item {
+      color: #cbd5e1 !important;
+      padding: 0.6rem 1rem;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+    }
+
+    .header-dropdown-menu .dropdown-item:hover {
+      background-color: rgba(255, 255, 255, 0.08) !important;
+      color: #ffffff !important;
+    }
+
+    .header-dropdown-menu .dropdown-item.text-danger {
+      color: #f87171 !important;
+    }
+
+    .header-dropdown-menu .dropdown-item.text-danger:hover {
+      background-color: rgba(239, 68, 68, 0.15) !important;
+      color: #fca5a5 !important;
+    }
+
+    .header-dropdown-menu .dropdown-divider {
+      border-top-color: rgba(255, 255, 255, 0.1) !important;
     }
   </style>
 </head>
@@ -97,26 +143,43 @@ $dbConnected = (getDBConnection() !== null);
           <span class="fs-2">ProjectPulse <small class="fs-5 text-indigo-lt fw-normal ms-1">Tracker</small></span>
         </a>
 
-        <!-- Right Side: Action Button + User Profile -->
+        <!-- Right Side: Action Button + User Profile Dropdown -->
         <div class="d-flex align-items-center gap-3">
-          <button class="btn btn-primary shadow-sm" data-bs-toggle="modal" data-bs-target="#addProjectModal">
-            <i class="ti ti-plus me-1"></i> New Project
-          </button>
+          <?php if (!isViewer()): ?>
+            <button class="btn btn-primary shadow-sm" data-bs-toggle="modal" data-bs-target="#addProjectModal">
+              <i class="ti ti-plus me-1"></i> New Project
+            </button>
+          <?php endif; ?>
 
+          <!-- Profile Dropdown Container -->
           <div class="dropdown">
-            <a href="#" class="user-pill d-flex align-items-center lh-1 text-reset text-decoration-none" data-bs-toggle="dropdown">
+            <a href="#" class="user-pill d-flex align-items-center lh-1 text-reset text-decoration-none" data-bs-toggle="dropdown" aria-expanded="false">
               <span class="avatar avatar-sm bg-indigo-lt text-indigo fw-bold rounded">
-                <?= strtoupper(substr($_SESSION['full_name'], 0, 1)) ?>
+                <?= strtoupper(substr($userName, 0, 1)) ?>
               </span>
-              <div class="d-none d-md-block ps-2 text-start">
-                <div class="fw-bold text-white fs-4"><?= htmlspecialchars($_SESSION['full_name']) ?></div>
-                <div class="small text-muted" style="font-size: 0.72rem;">Authorized User</div>
+              <div class="d-none d-md-block ps-2 text-start me-1">
+                <div class="fw-bold text-white fs-4"><?= htmlspecialchars($userName) ?></div>
+                <div class="small text-muted" style="font-size: 0.72rem;"><?= htmlspecialchars($systemRole) ?> Access</div>
               </div>
+              <i class="ti ti-chevron-down text-muted ms-1 fs-5"></i>
             </a>
-            <div class="dropdown-menu dropdown-menu-end dropdown-menu-arrow">
-              <a href="logout.php" class="dropdown-item text-danger"><i class="ti ti-logout me-2"></i> Logout</a>
+
+            <!-- Dropdown Menu -->
+            <div class="dropdown-menu dropdown-menu-end dropdown-menu-arrow header-dropdown-menu">
+              <div class="px-3 py-2 border-bottom border-secondary-subtle mb-1">
+                <div class="fw-bold text-white"><?= htmlspecialchars($userName) ?></div>
+                <div class="small text-muted"><?= htmlspecialchars($systemRole) ?> Role</div>
+              </div>
+              <a href="team.php" class="dropdown-item">
+                <i class="ti ti-user me-2 text-primary"></i> My Profile / Directory
+              </a>
+              <div class="dropdown-divider"></div>
+              <a href="logout.php" class="dropdown-item text-danger">
+                <i class="ti ti-logout me-2"></i> Logout
+              </a>
             </div>
           </div>
+
         </div>
 
       </div>
@@ -184,7 +247,7 @@ $dbConnected = (getDBConnection() !== null);
             <div class="col-6 col-sm-3">
               <div class="card">
                 <div class="card-body">
-                  <div class="subheader text-muted">Total Projects</div>
+                  <div class="subheader text-muted">Total Accessible Projects</div>
                   <div class="h1 mb-0 mt-2"><?= $metrics['total_projects'] ?></div>
                 </div>
               </div>

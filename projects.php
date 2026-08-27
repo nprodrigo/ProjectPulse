@@ -1,125 +1,86 @@
 <?php
 require_once __DIR__ . '/includes/header.php';
 
-$db = getDBConnection();
+$selectedStatus = $_GET['status'] ?? 'active';
+$allProjects = getProjects();
 
-// Fetch role-scoped accessible projects
-$sql   = getAccessibleProjectsQuery();
-$stmt  = $db->query($sql);
-$projects = $stmt->fetchAll();
-
-$userRole = strtolower($_SESSION['role'] ?? 'viewer');
+// Filter Projects based on status tab
+$filteredProjects = array_filter($allProjects, function($proj) use ($selectedStatus) {
+    if ($selectedStatus === 'completed') {
+        return ($proj['status'] ?? '') === 'Completed';
+    }
+    return ($proj['status'] ?? '') !== 'Completed';
+});
 ?>
 
-<!-- Header Bar -->
-<div class="card mb-3 d-print-none">
-  <div class="card-body">
-    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-      <div>
-        <h2 class="card-title h1 mb-1"><i class="ti ti-folders me-2 text-primary"></i>All Projects Directory</h2>
-        <div class="text-secondary small">
-          Showing projects accessible to your role: 
-          <span class="badge bg-indigo-lt text-indigo uppercase font-weight-bold ms-1"><?= htmlspecialchars($userRole) ?></span>
-        </div>
-      </div>
-      
-      <!-- Strictly Hide New Project button from Viewers -->
-      <?php if ($userRole !== 'viewer'): ?>
-        <button class="btn btn-primary shadow-sm" data-bs-toggle="modal" data-bs-target="#addProjectModal">
-          <i class="ti ti-plus me-1"></i> New Project
-        </button>
-      <?php endif; ?>
+<div class="container" style="padding: 1.5rem 0;">
+  
+  <!-- Directory Header & Status Filter Tabs -->
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+    <div>
+      <h2 style="font-size: 1.4rem; font-weight: 700; color: #ffffff;">
+        <i class="fa-solid fa-folder-open"></i> Projects Directory
+      </h2>
+      <p style="color: #94a3b8; font-size: 0.85rem;">Detailed execution view and project controls</p>
+    </div>
+
+    <!-- Filter Buttons (Active vs Completed) -->
+    <div style="display: flex; gap: 0.5rem; background: #1e293b; padding: 0.3rem; border-radius: 6px;">
+      <a href="projects.php?status=active" class="btn" style="padding: 0.4rem 1rem; font-size: 0.85rem; border-radius: 4px; text-decoration: none; color: <?= $selectedStatus === 'active' ? '#fff' : '#94a3b8' ?>; background: <?= $selectedStatus === 'active' ? '#2563eb' : 'transparent' ?>;">
+        Active Projects
+      </a>
+      <a href="projects.php?status=completed" class="btn" style="padding: 0.4rem 1rem; font-size: 0.85rem; border-radius: 4px; text-decoration: none; color: <?= $selectedStatus === 'completed' ? '#fff' : '#94a3b8' ?>; background: <?= $selectedStatus === 'completed' ? '#2563eb' : 'transparent' ?>;">
+        Completed Archive
+      </a>
     </div>
   </div>
-</div>
 
-<!-- Projects Grid View -->
-<div class="row row-cards">
-  <?php if (empty($projects)): ?>
-    <div class="col-12">
-      <div class="card card-body text-center py-5">
-        <i class="ti ti-folder-off fs-1 text-secondary mb-2"></i>
-        <h3 class="text-secondary">No Projects Available</h3>
-        <p class="text-muted small mb-0">You do not have permission to access any active projects, or no projects match your user assignment.</p>
+  <!-- Cards Grid View -->
+  <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1.25rem;">
+    <?php if (empty($filteredProjects)): ?>
+      <div style="grid-column: 1 / -1; text-align: center; color: #94a3b8; padding: 3rem;">
+        No <?= htmlspecialchars($selectedStatus) ?> projects found.
       </div>
-    </div>
-  <?php else: ?>
-    <?php foreach ($projects as $p): ?>
-      <?php 
-        $timeElapsed  = getScheduleElapsedPercent($p['start_date'], $p['target_completion_date']);
-        $progress     = (int)($p['progress_percent'] ?? 0);
-        $taskWeighted = getTaskWeightedProgress($p['id']);
-        
-        $variance = $progress - $timeElapsed;
-        $statusBadge = 'bg-success-lt text-success';
-        $statusText  = 'On Track';
-
-        if ($variance < -15) {
-            $statusBadge = 'bg-danger-lt text-danger';
-            $statusText  = 'Behind Schedule';
-        } elseif ($variance < 0) {
-            $statusBadge = 'bg-warning-lt text-warning';
-            $statusText  = 'Slight Delay';
-        }
-      ?>
-      <div class="col-md-6 col-lg-4">
-        <div class="card card-sm">
-          <div class="card-status-top bg-primary"></div>
-          <div class="card-body">
-            <div class="d-flex align-items-center justify-content-between mb-2">
-              <span class="badge bg-secondary-lt"><?= htmlspecialchars($p['category_name'] ?: 'General') ?></span>
-              <span class="badge <?= $statusBadge ?>"><?= $statusText ?></span>
+    <?php else: ?>
+      <?php foreach ($filteredProjects as $proj): ?>
+        <div class="panel-card" style="display: flex; flex-direction: column; justify-content: space-between; background: #fff; padding: 1.25rem; border-radius: 8px;">
+          <div>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+              <span style="font-size: 0.75rem; background: #f1f5f9; padding: 2px 6px; border-radius: 4px; color: #475569;">
+                <?= htmlspecialchars($proj['category_name'] ?? 'General') ?>
+              </span>
+              <span style="font-size: 0.75rem; font-weight: bold; color: <?= ($proj['status'] ?? '') === 'Completed' ? '#10b981' : '#f59e0b' ?>;">
+                <?= htmlspecialchars($proj['status'] ?? 'In Progress') ?>
+              </span>
             </div>
 
-            <h3 class="card-title mb-2">
-              <a href="project_detail.php?id=<?= $p['id'] ?>" class="text-reset text-decoration-none">
-                <i class="ti ti-box me-1 text-primary"></i><?= htmlspecialchars($p['title']) ?>
-              </a>
-            </h3>
-
-            <p class="text-secondary small text-truncate mb-3" style="max-width: 100%;">
-              <?= htmlspecialchars($p['description'] ?: 'No description provided.') ?>
+            <h4 style="font-size: 1.05rem; font-weight: 700; color: #0f172a; margin-bottom: 0.5rem;">
+              <?= htmlspecialchars($proj['title']) ?>
+            </h4>
+            <p style="font-size: 0.825rem; color: #64748b; margin-bottom: 1rem;">
+              <?= htmlspecialchars($proj['description'] ?: 'No description provided.') ?>
             </p>
-
-            <!-- Dual Progress Metrics -->
-            <div class="mb-3">
-              <div class="d-flex justify-content-between align-items-center small mb-1">
-                <span class="text-muted"><i class="ti ti-clock me-1"></i>Time Elapsed:</span>
-                <strong><?= $timeElapsed ?>%</strong>
-              </div>
-              <div class="progress progress-sm mb-2">
-                <div class="progress-bar bg-primary" style="width: <?= $timeElapsed ?>%"></div>
-              </div>
-
-              <div class="d-flex justify-content-between align-items-center small mb-1">
-                <span class="text-muted"><i class="ti ti-chart-pie me-1"></i>Work Progress:</span>
-                <strong class="text-success"><?= $progress ?>% <small class="text-muted">(Task: <?= $taskWeighted ?>%)</small></strong>
-              </div>
-              <div class="progress progress-sm">
-                <div class="progress-bar bg-success" style="width: <?= $progress ?>%"></div>
-              </div>
-            </div>
-
-            <!-- Dates & Owner Footer -->
-            <div class="d-flex justify-content-between align-items-center border-top pt-2 text-muted small">
-              <div>
-                <i class="ti ti-user me-1"></i><?= htmlspecialchars($p['owner_name'] ?: 'Unassigned') ?>
-              </div>
-              <div>
-                <i class="ti ti-calendar me-1"></i><?= date('M d, Y', strtotime($p['target_completion_date'])) ?>
-              </div>
-            </div>
           </div>
 
-          <div class="card-footer bg-transparent border-0 pt-0 text-end">
-            <a href="project_detail.php?id=<?= $p['id'] ?>" class="btn btn-sm btn-outline-primary w-100">
-              View Project Details <i class="ti ti-arrow-right ms-1"></i>
+          <div>
+            <!-- Corrected Dynamic Progress Bar -->
+            <div style="font-size: 0.75rem; color: #475569; margin-bottom: 0.25rem; display: flex; justify-content: space-between;">
+              <span>Work Progress</span>
+              <strong><?= (int)($proj['progress'] ?? 0) ?>%</strong>
+            </div>
+            <div style="height: 6px; background: #e2e8f0; border-radius: 3px; overflow: hidden; margin-bottom: 1rem;">
+              <div style="width: <?= (int)($proj['progress'] ?? 0) ?>%; height: 100%; background: #2563eb;"></div>
+            </div>
+
+            <a href="project_detail.php?id=<?= $proj['id'] ?>" class="btn-blue" style="width: 100%; text-align: center; text-decoration: none; box-sizing: border-box; display: block; padding: 0.5rem 0;">
+              View Project Details <i class="fa-solid fa-arrow-right"></i>
             </a>
           </div>
         </div>
-      </div>
-    <?php endforeach; ?>
-  <?php endif; ?>
+      <?php endforeach; ?>
+    <?php endif; ?>
+  </div>
+
 </div>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

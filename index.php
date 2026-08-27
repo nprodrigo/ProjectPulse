@@ -1,117 +1,148 @@
 <?php
 require_once __DIR__ . '/includes/header.php';
 
-$selectedCategory = $_GET['category'] ?? '';
-$selectedStatus   = $_GET['status'] ?? '';
-$selectedPriority = $_GET['priority'] ?? '';
-$searchQuery      = $_GET['search'] ?? '';
+$allProjects = getProjects();
 
-$projects = getProjects([
-    'category' => $selectedCategory,
-    'status'   => $selectedStatus,
-    'priority' => $selectedPriority,
-    'search'   => $searchQuery
-]);
+$totalProjects = count($allProjects);
+$blockedCount = 0;
+$completedCount = 0;
+$activeProjects = [];
+$totalProgressSum = 0;
+
+foreach ($allProjects as $proj) {
+    $progVal = (int)($proj['progress'] ?? 0);
+    $totalProgressSum += $progVal;
+
+    if (($proj['status'] ?? '') === 'Completed') {
+        $completedCount++;
+    } else {
+        $activeProjects[] = $proj;
+        if (!empty($proj['needs_attention']) || ($proj['status'] ?? '') === 'Needs Attention') {
+            $blockedCount++;
+        }
+    }
+}
+
+$activeTotal = count($activeProjects);
+$avgCompletion = $totalProjects > 0 ? round($totalProgressSum / $totalProjects) : 0;
+$healthRate = $activeTotal > 0 ? round((($activeTotal - $blockedCount) / $activeTotal) * 100) : 100;
 ?>
 
-<!-- Control Bar: Filters & Search -->
-<div class="card mb-3">
-  <div class="card-body">
-    <form method="GET" action="index.php" class="row g-2 align-items-center">
-      <div class="col-md-3">
-        <select name="category" class="form-select" onchange="this.form.submit()">
-          <option value="">All Categories</option>
-          <?php foreach ($categories as $cat): ?>
-            <option value="<?= urlencode($cat['slug']) ?>" <?= $selectedCategory === $cat['slug'] ? 'selected' : '' ?>>
-              <?= htmlspecialchars($cat['name']) ?>
-            </option>
-          <?php endforeach; ?>
-        </select>
-      </div>
-      <div class="col-md-3">
-        <select name="status" class="form-select" onchange="this.form.submit()">
-          <option value="">All Statuses</option>
-          <option value="In Progress" <?= $selectedStatus === 'In Progress' ? 'selected' : '' ?>>In Progress</option>
-          <option value="Needs Attention" <?= $selectedStatus === 'Needs Attention' ? 'selected' : '' ?>>Needs Attention</option>
-          <option value="Completed" <?= $selectedStatus === 'Completed' ? 'selected' : '' ?>>Completed</option>
-        </select>
-      </div>
-      <div class="col-md-3">
-        <select name="priority" class="form-select" onchange="this.form.submit()">
-          <option value="">All Priorities</option>
-          <option value="Critical" <?= $selectedPriority === 'Critical' ? 'selected' : '' ?>>Critical</option>
-          <option value="High" <?= $selectedPriority === 'High' ? 'selected' : '' ?>>High</option>
-          <option value="Medium" <?= $selectedPriority === 'Medium' ? 'selected' : '' ?>>Medium</option>
-          <option value="Low" <?= $selectedPriority === 'Low' ? 'selected' : '' ?>>Low</option>
-        </select>
-      </div>
-      <div class="col-md-3">
-        <div class="input-icon">
-          <input type="text" name="search" class="form-control" placeholder="Search projects..." value="<?= htmlspecialchars($searchQuery) ?>">
-          <span class="input-icon-addon"><i class="ti ti-search"></i></span>
-        </div>
-      </div>
-    </form>
-  </div>
-</div>
+<style>
+.dashboard-container { padding: 1.5rem 0; }
+.kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1.25rem; margin-bottom: 2rem; }
+.kpi-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1.25rem; }
+.kpi-title { font-size: 0.75rem; font-weight: 700; color: #64748b; text-transform: uppercase; }
+.kpi-value { font-size: 1.85rem; font-weight: 800; color: #0f172a; margin-top: 0.25rem; }
 
-<!-- Projects Grid -->
-<div class="row row-cards">
-  <?php if (empty($projects)): ?>
-    <div class="col-12">
-      <div class="card card-body text-center py-5">
-        <p class="text-secondary mb-0">No projects found matching the selected criteria.</p>
-      </div>
+.exec-grid { display: grid; grid-template-columns: 320px 1fr; gap: 1.5rem; }
+@media (max-width: 1024px) { .exec-grid { grid-template-columns: 1fr; } }
+
+.exec-table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 8px; border: 1px solid #e2e8f0; overflow: hidden; }
+.exec-table th, .exec-table td { padding: 0.85rem 1rem; text-align: left; border-bottom: 1px solid #f1f5f9; font-size: 0.875rem; }
+.exec-table th { background: #f8fafc; color: #475569; font-weight: 700; font-size: 0.75rem; text-transform: uppercase; }
+</style>
+
+<div class="dashboard-container">
+
+  <!-- Executive KPIs -->
+  <div class="kpi-grid">
+    <div class="kpi-card">
+      <div class="kpi-title">Portfolio Health</div>
+      <div class="kpi-value" style="color: <?= $healthRate >= 80 ? '#10b981' : '#ef4444' ?>;"><?= $healthRate ?>%</div>
+      <small style="color: #64748b;"><?= $activeTotal - $blockedCount ?> of <?= $activeTotal ?> active projects on track</small>
     </div>
-  <?php else: ?>
-    <?php foreach ($projects as $project): ?>
-      <div class="col-md-6 col-lg-4">
-        <div class="card <?= $project['needs_attention'] ? 'card-border-start border-danger' : '' ?>">
-          <div class="card-header d-flex justify-content-between">
-            <span class="badge bg-secondary-lt"><?= htmlspecialchars($project['category_name']) ?></span>
-            <div>
-              <span class="badge bg-<?= $project['priority'] === 'Critical' ? 'danger' : 'primary' ?>-lt me-1"><?= $project['priority'] ?></span>
-              <span class="badge bg-<?= $project['status'] === 'Completed' ? 'success' : 'blue' ?>-lt"><?= $project['status'] ?></span>
-            </div>
-          </div>
-          
-          <div class="card-body">
-            <h3 class="card-title">
-              <a href="project_detail.php?id=<?= $project['id'] ?>" class="text-reset">
-                <?= htmlspecialchars($project['title']) ?>
-              </a>
-            </h3>
-            <p class="text-secondary small text-truncate-2"><?= htmlspecialchars($project['description'] ?: 'No description provided.') ?></p>
 
-            <?php if ($project['needs_attention'] && !empty($project['attention_reason'])): ?>
-              <div class="alert alert-danger py-2 px-3 mb-3 small" role="alert">
-                <i class="ti ti-alert-triangle me-1"></i> <?= htmlspecialchars($project['attention_reason']) ?>
-              </div>
-            <?php endif; ?>
+    <div class="kpi-card">
+      <div class="kpi-title">Average Progress</div>
+      <div class="kpi-value" style="color: #2563eb;"><?= $avgCompletion ?>%</div>
+      <small style="color: #64748b;">Across all accessible projects</small>
+    </div>
 
-            <div class="mb-2">
-              <div class="d-flex justify-content-between mb-1 small">
-                <span class="text-secondary">Progress</span>
-                <span class="fw-bold"><?= $project['progress_percent'] ?>%</span>
-              </div>
-              <div class="progress progress-sm">
-                <div class="progress-bar <?= $project['status'] === 'Completed' ? 'bg-success' : ($project['needs_attention'] ? 'bg-danger' : 'bg-primary') ?>" 
-                     style="width: <?= $project['progress_percent'] ?>%"></div>
-              </div>
-            </div>
-          </div>
+    <div class="kpi-card">
+      <div class="kpi-title">Critical Blockers</div>
+      <div class="kpi-value" style="color: <?= $blockedCount > 0 ? '#ef4444' : '#10b981' ?>;"><?= $blockedCount ?></div>
+      <small style="color: #64748b;">Needs management attention</small>
+    </div>
 
-          <div class="card-footer d-flex justify-content-between align-items-center text-secondary small">
-            <div class="d-flex align-items-center gap-2">
-              <span class="avatar avatar-xs rounded-circle bg-blue-lt"><?= strtoupper(substr($project['owner_name'], 0, 1)) ?></span>
-              <span><?= htmlspecialchars($project['owner_name']) ?></span>
-            </div>
-            <div><i class="ti ti-calendar me-1"></i><?= date('M d', strtotime($project['target_completion_date'])) ?></div>
-          </div>
+    <div class="kpi-card">
+      <div class="kpi-title">Completed Projects</div>
+      <div class="kpi-value" style="color: #10b981;"><?= $completedCount ?></div>
+      <small style="color: #64748b;">Archived from active view</small>
+    </div>
+  </div>
+
+  <!-- Executive Hub Split View -->
+  <div class="exec-grid">
+    
+    <!-- Action Required Box -->
+    <div style="background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1.25rem; height: fit-content;">
+      <h3 style="font-size: 1rem; font-weight: 700; color: #0f172a; margin-bottom: 1rem;">
+        <i class="fa-solid fa-triangle-exclamation" style="color: #ef4444;"></i> Decision Needed
+      </h3>
+
+      <?php 
+      $hasBlockers = false;
+      foreach ($activeProjects as $proj):
+        if (!empty($proj['needs_attention']) || ($proj['status'] ?? '') === 'Needs Attention'):
+          $hasBlockers = true;
+      ?>
+        <div style="border-left: 3px solid #ef4444; background: #fef2f2; padding: 0.75rem; border-radius: 4px; margin-bottom: 0.75rem;">
+          <strong style="color: #991b1b; font-size: 0.85rem;"><?= htmlspecialchars($proj['title']) ?></strong>
+          <p style="font-size: 0.775rem; color: #7f1d1d; margin-top: 0.2rem;">
+            <?= htmlspecialchars($proj['blocker_reason'] ?? 'Requires administrative sign-off.') ?>
+          </p>
         </div>
-      </div>
-    <?php endforeach; ?>
-  <?php endif; ?>
+      <?php 
+        endif;
+      endforeach;
+
+      if (!$hasBlockers): ?>
+        <p style="color: #94a3b8; font-size: 0.85rem; text-align: center; padding: 1rem 0;">No active operational bottlenecks.</p>
+      <?php endif; ?>
+    </div>
+
+    <!-- Active Projects Executive Summary Table -->
+    <div>
+      <h3 style="font-size: 1rem; font-weight: 700; color: #0f172a; margin-bottom: 1rem;">Active Project Executive Summary</h3>
+      <table class="exec-table">
+        <thead>
+          <tr>
+            <th>Project Title</th>
+            <th>Manager</th>
+            <th>Category</th>
+            <th>Progress</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          <?php foreach ($activeProjects as $proj): ?>
+            <tr>
+              <td><strong><a href="project_detail.php?id=<?= $proj['id'] ?>" style="color: #0f172a; text-decoration: none;"><?= htmlspecialchars($proj['title']) ?></a></strong></td>
+              <td><?= htmlspecialchars($proj['owner_name'] ?? 'Unassigned') ?></td>
+              <td><?= htmlspecialchars($proj['category_name'] ?? 'General') ?></td>
+              <td>
+                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                  <span style="font-weight: 700; min-width: 35px;"><?= (int)($proj['progress'] ?? 0) ?>%</span>
+                  <div style="flex-grow: 1; height: 6px; background: #e2e8f0; border-radius: 3px; overflow: hidden;">
+                    <div style="width: <?= (int)($proj['progress'] ?? 0) ?>%; height: 100%; background: #2563eb;"></div>
+                  </div>
+                </div>
+              </td>
+              <td>
+                <?php if (!empty($proj['needs_attention']) || ($proj['status'] ?? '') === 'Needs Attention'): ?>
+                  <span style="color: #ef4444; font-weight: 600;">Needs Attention</span>
+                <?php else: ?>
+                  <span style="color: #10b981; font-weight: 600;"><?= htmlspecialchars($proj['status'] ?? 'On Track') ?></span>
+                <?php endif; ?>
+              </td>
+            </tr>
+          <?php endforeach; ?>
+        </tbody>
+      </table>
+    </div>
+
+  </div>
 </div>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

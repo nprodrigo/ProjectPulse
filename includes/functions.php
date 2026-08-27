@@ -12,10 +12,22 @@ function getProjects($filters = []) {
     $db = getDBConnection();
     if (!$db) return [];
 
-    $sql = "SELECT p.*, c.name as category_name, c.color_code as category_color, c.slug as category_slug,
+    // SQL query pointing to your exact database column: progress_percent
+    $sql = "SELECT p.*, 
+            c.name as category_name, 
+            c.color_code as category_color, 
+            c.slug as category_slug,
             (SELECT COUNT(*) FROM pendings WHERE project_id = p.id AND status != 'Resolved') as open_pendings_count,
             (SELECT COUNT(*) FROM milestones WHERE project_id = p.id) as total_milestones,
-            (SELECT COUNT(*) FROM milestones WHERE project_id = p.id AND status = 'Completed') as completed_milestones
+            (SELECT COUNT(*) FROM milestones WHERE project_id = p.id AND status = 'Completed') as completed_milestones,
+            COALESCE(
+                NULLIF(p.progress_percent, 0),
+                (SELECT ROUND((COUNT(CASE WHEN status = 'Completed' THEN 1 END) * 100.0) / NULLIF(COUNT(*), 0)) 
+                 FROM tasks WHERE project_id = p.id),
+                (SELECT ROUND((COUNT(CASE WHEN status = 'Completed' THEN 1 END) * 100.0) / NULLIF(COUNT(*), 0)) 
+                 FROM milestones WHERE project_id = p.id),
+                0
+            ) as calculated_progress
             FROM projects p
             JOIN categories c ON p.category_id = c.id
             WHERE 1=1";
@@ -50,13 +62,21 @@ function getProjects($filters = []) {
         $sql .= " AND (p.needs_attention = 1 OR p.status = 'Needs Attention')";
     }
 
-    // Default sorting: Needs attention first, then by priority/target completion
     $sql .= " ORDER BY p.needs_attention DESC, FIELD(p.priority, 'Critical', 'High', 'Medium', 'Low'), p.target_completion_date ASC";
 
     try {
         $stmt = $db->prepare($sql);
         $stmt->execute($params);
-        return $stmt->fetchAll();
+        $projects = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        // Map both array keys so $proj['progress_percent'] and $proj['progress'] return the correct value
+        foreach ($projects as &$proj) {
+            $val = (int)($proj['calculated_progress'] ?? 0);
+            $proj['progress_percent'] = $val;
+            $proj['progress']         = $val;
+        }
+
+        return $projects;
     } catch (PDOException $e) {
         return [];
     }

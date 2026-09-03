@@ -300,17 +300,26 @@ $teamCategories = ['Strategic', 'Functional', 'Technical', 'Project Management',
               </div>
             </td>
             <td>
-              <span class="badge <?= $t['status'] === 'Completed' ? 'bg-success-lt text-success' : ($t['status'] === 'In Progress' ? 'bg-primary-lt text-primary' : 'bg-secondary-lt') ?>">
+              <span class="badge <?= $t['status'] === 'Completed' ? 'bg-success-lt text-success' : ($t['status'] === 'In Progress' ? 'bg-primary-lt text-primary' : ($t['status'] === 'Under Review' ? 'bg-warning-lt text-warning' : 'bg-secondary-lt')) ?>">
                 <?= htmlspecialchars($t['status']) ?>
               </span>
             </td>
             <?php if (!$isReadOnly): ?>
               <td class="d-print-none">
-                <button class="btn btn-sm btn-icon btn-ghost-secondary" 
-                        title="Edit Task & Scope"
-                        onclick='openEditTaskModal(<?= json_encode($t) ?>, <?= json_encode($raci) ?>)'>
-                  <i class="ti ti-edit"></i>
-                </button>
+                <div class="btn-list flex-nowrap">
+                  <?php if ($t['status'] !== 'Completed'): ?>
+                    <button class="btn btn-sm btn-icon btn-outline-success" 
+                            title="Advance to Next Stage" 
+                            onclick="advanceTaskStage(<?= $t['id'] ?>, '<?= $t['status'] ?>')">
+                      <i class="ti ti-arrow-right"></i>
+                    </button>
+                  <?php endif; ?>
+                  <button class="btn btn-sm btn-icon btn-ghost-secondary" 
+                          title="Edit Task & Scope"
+                          onclick='openEditTaskModal(<?= json_encode($t) ?>, <?= json_encode($raci) ?>)'>
+                    <i class="ti ti-edit"></i>
+                  </button>
+                </div>
               </td>
             <?php endif; ?>
           </tr>
@@ -739,6 +748,42 @@ function openEditTaskModal(task, raci) {
     editModal.show();
 }
 
+function advanceTaskStage(taskId, currentStatus) {
+    let nextStatus = 'In Progress';
+    if (currentStatus === 'To Do') {
+        nextStatus = 'In Progress';
+    } else if (currentStatus === 'In Progress') {
+        nextStatus = 'Under Review';
+    } else if (currentStatus === 'Under Review') {
+        nextStatus = 'Completed';
+    } else {
+        return; // Already completed
+    }
+
+    let formData = new FormData();
+    formData.append('action', 'advance_task_stage');
+    formData.append('task_id', taskId);
+    formData.append('next_status', nextStatus);
+    formData.append('project_id', '<?= $project['id'] ?>');
+
+    fetch('api.php', {
+        method: 'POST',
+        body: formData,
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            window.location.reload();
+        } else {
+            alert(data.message || 'Error advancing task stage.');
+        }
+    })
+    .catch(error => console.error('Error advancing task stage:', error));
+}
+
 function moveTask(taskId, direction) {
     let formData = new FormData();
     formData.append('action', 'swap_task_order');
@@ -771,4 +816,3 @@ function escapeHtml(text) {
 </script>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>
-

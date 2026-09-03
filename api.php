@@ -19,7 +19,7 @@ if (!isset($_SESSION['user_id']) && !isset($_SESSION['member_id'])) {
 }
 
 $isAjax = (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest') 
-          || (isset($_POST['action']) && in_array($_POST['action'], ['update_progress', 'toggle_pending', 'toggle_task', 'reorder_tasks', 'swap_task_order']));
+          || (isset($_POST['action']) && in_array($_POST['action'], ['update_progress', 'advance_task_stage', 'toggle_pending', 'toggle_task', 'reorder_tasks', 'swap_task_order']));
 
 $db = getDBConnection();
 if (!$db) {
@@ -256,7 +256,7 @@ switch ($action) {
         break;
 
     // ----------------------------------------------------------------------
-    // 3. Task Management, RACI Matrix & Sequence Swapping
+    // 3. Task Management, RACI Matrix, Stage Progression & Sequence Swapping
     // ----------------------------------------------------------------------
     case 'create_task_raci':
         $projectId    = (int)($_POST['project_id'] ?? 0);
@@ -343,6 +343,29 @@ switch ($action) {
             exit;
         }
         break;
+
+    case 'advance_task_stage':
+        header('Content-Type: application/json');
+        $taskId     = (int)($_POST['task_id'] ?? 0);
+        $nextStatus = $_POST['next_status'] ?? '';
+        $projectId  = (int)($_POST['project_id'] ?? 0);
+
+        $allowedStatuses = ['To Do', 'In Progress', 'Under Review', 'Completed'];
+
+        if ($taskId > 0 && in_array($nextStatus, $allowedStatuses)) {
+            $stmt = $db->prepare("UPDATE tasks SET status = :status WHERE id = :id");
+            $stmt->execute(['status' => $nextStatus, 'id' => $taskId]);
+
+            if ($projectId > 0) {
+                syncProjectTaskProgress($projectId);
+            }
+
+            echo json_encode(['success' => true]);
+            exit;
+        }
+        
+        echo json_encode(['success' => false, 'message' => 'Invalid task or status progression.']);
+        exit;
 
     case 'swap_task_order':
         header('Content-Type: application/json');

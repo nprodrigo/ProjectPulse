@@ -22,11 +22,11 @@ function getDBConnection() {
 
     if ($isLocal) {
         // --- LOCAL DEVELOPMENT ENVIRONMENT ---
-        $dbHost = 'db';
+        $dbHost = 'global_db';
         $dbPort = '3306';
-        $dbName = 'dev_db';      // Your local database name
-        $dbUser = 'dev_user';              // Your local MySQL username
-        $dbPass = 'dev_password';                  // Your local MySQL password
+        $dbName = 'project_pulse';      // Your local database name
+        $dbUser = 'root';              // Your local MySQL username
+        $dbPass = 'rootpassword';                  // Your local MySQL password
     } else {
         // --- CLOUD PRODUCTION ENVIRONMENT (cPanel / Remote Host) ---
         $dbHost = 'localhost';

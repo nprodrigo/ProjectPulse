@@ -287,7 +287,9 @@ cd ProjectPulse
 ```
 
 2. **Configure Database**:
-* Edit `config/database.php` with your local and production MySQL credentials.
+* Copy `.env.example` to `.env`.
+* Set the local database values in `.env`.
+* Create the production `.env` directly on the server; it is excluded from Git and FTP deployment.
 
 3. **Initialize Database**:
 * Import the MySQL schema script into your database tool (phpMyAdmin / MySQL Workbench).

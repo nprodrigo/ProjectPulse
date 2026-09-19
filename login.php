@@ -22,8 +22,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             try {
                 // 2. Query team_members with unique parameter names to avoid PDO HY093 duplicate parameter issues
                 $stmt = $db->prepare("SELECT * FROM team_members 
-                                      WHERE LOWER(username) = LOWER(:uname) 
-                                         OR LOWER(email) = LOWER(:email) 
+                                      WHERE (LOWER(username) = LOWER(:uname)
+                                         OR LOWER(email) = LOWER(:email))
+                                        AND is_active = 1
                                       LIMIT 1");
                 $stmt->execute([
                     'uname' => $usernameInput,

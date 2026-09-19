@@ -1,5 +1,7 @@
 <?php
-session_start();
+if (session_status() !== PHP_SESSION_ACTIVE) {
+    session_start();
+}
 
 // Authentication Guard
 if (!isset($_SESSION['user_id']) && !isset($_SESSION['member_id'])) {

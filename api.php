@@ -172,10 +172,15 @@ switch ($action) {
             $stmtDel->execute(['pid' => $projectId]);
 
             $stmtIns = $db->prepare("INSERT INTO project_team_roles (project_id, member_id, team_type) VALUES (:pid, :mid, :type)");
+            $stmtActive = $db->prepare("SELECT id FROM team_members WHERE id = :mid AND is_active = 1");
             foreach ($teams as $type => $memberIds) {
                 if (is_array($memberIds)) {
                     foreach ($memberIds as $mid) {
-                        $stmtIns->execute(['pid' => $projectId, 'mid' => (int)$mid, 'type' => $type]);
+                        $memberId = (int)$mid;
+                        $stmtActive->execute(['mid' => $memberId]);
+                        if ($stmtActive->fetchColumn()) {
+                            $stmtIns->execute(['pid' => $projectId, 'mid' => $memberId, 'type' => $type]);
+                        }
                     }
                 }
             }

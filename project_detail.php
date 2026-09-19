@@ -55,7 +55,7 @@ $scheduleVar = getScheduleVariance($project['target_completion_date'], $calculat
 // 7. Fetch Members assigned to this project's Governance Teams for RACI assignment
 $projectGovernanceMembers = getProjectGovernanceMembers($project['id']);
 if (empty($projectGovernanceMembers)) {
-    $projectGovernanceMembers = getTeamMembers();
+    $projectGovernanceMembers = getTeamMembers(true);
 }
 
 $teamCategories = ['Strategic', 'Functional', 'Technical', 'Project Management', 'Viewer'];
@@ -183,7 +183,7 @@ $taskStatusSequence = ['To Do', 'In Progress', 'Under Review', 'Completed'];
               <?php
                 $stmtTeam = $db->prepare("SELECT tm.full_name FROM team_members tm 
                                           JOIN project_team_roles ptr ON tm.id = ptr.member_id 
-                                          WHERE ptr.project_id = :pid AND ptr.team_type = :type");
+                                          WHERE ptr.project_id = :pid AND ptr.team_type = :type AND tm.is_active = 1");
                 $stmtTeam->execute(['pid' => $project['id'], 'type' => $cat]);
                 $members = $stmtTeam->fetchAll();
               ?>
@@ -460,7 +460,7 @@ $taskStatusSequence = ['To Do', 'In Progress', 'Under Review', 'Completed'];
             <p class="text-secondary small mb-3">Assign team members to governance categories. Members added here can access this project and populate RACI assignment dropdowns.</p>
 
             <?php 
-              $allGlobalMembers = getTeamMembers();
+              $allGlobalMembers = getTeamMembers(true);
               $assignedByType = [];
               foreach ($teamCategories as $cat) {
                   $stmtG = $db->prepare("SELECT member_id FROM project_team_roles WHERE project_id = :pid AND team_type = :type");

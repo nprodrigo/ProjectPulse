@@ -6,6 +6,30 @@
 require_once __DIR__ . '/../config/database.php';
 
 /**
+ * Ensure older installations have the team member activity flag.
+ */
+function ensureTeamMemberStatusColumn() {
+    static $checked = false;
+    if ($checked) {
+        return;
+    }
+
+    $checked = true;
+    $db = getDBConnection();
+    if (!$db) {
+        return;
+    }
+
+    $columns = $db->query("SHOW COLUMNS FROM `team_members`")->fetchAll(PDO::FETCH_COLUMN);
+    if (!in_array('is_active', $columns, true)) {
+        $db->exec("ALTER TABLE `team_members`
+                   ADD COLUMN `is_active` TINYINT(1) NOT NULL DEFAULT 1 AFTER `role_title`");
+    }
+}
+
+ensureTeamMemberStatusColumn();
+
+/**
  * Fetch projects with optional filters (category, status, priority, search)
  */
 function getProjects($filters = []) {
@@ -293,7 +317,7 @@ function getProjectTeam($projectId) {
     try {
         $stmt = $db->prepare("SELECT tm.* FROM team_members tm
                               JOIN project_teams pt ON tm.id = pt.member_id
-                              WHERE pt.project_id = :pid
+                              WHERE pt.project_id = :pid AND tm.is_active = 1
                               ORDER BY tm.full_name ASC");
         $stmt->execute(['pid' => $projectId]);
         return $stmt->fetchAll();
@@ -314,8 +338,13 @@ function updateProjectTeam($projectId, $memberIds = []) {
 
         if (!empty($memberIds)) {
             $insertStmt = $db->prepare("INSERT INTO project_teams (project_id, member_id) VALUES (:pid, :mid)");
+            $activeStmt = $db->prepare("SELECT id FROM team_members WHERE id = :mid AND is_active = 1");
             foreach ($memberIds as $mId) {
-                $insertStmt->execute(['pid' => $projectId, 'mid' => (int)$mId]);
+                $memberId = (int)$mId;
+                $activeStmt->execute(['mid' => $memberId]);
+                if ($activeStmt->fetchColumn()) {
+                    $insertStmt->execute(['pid' => $projectId, 'mid' => $memberId]);
+                }
             }
         }
         return true;
@@ -360,11 +389,16 @@ function getProjectTasks($projectId) {
 /**
  * Fetch all active team members
  */
-function getTeamMembers() {
+function getTeamMembers($activeOnly = false) {
     $db = getDBConnection();
     if (!$db) return [];
     try {
-        return $db->query("SELECT * FROM team_members ORDER BY full_name ASC")->fetchAll();
+        $sql = "SELECT * FROM team_members";
+        if ($activeOnly) {
+            $sql .= " WHERE is_active = 1";
+        }
+        $sql .= " ORDER BY full_name ASC";
+        return $db->query($sql)->fetchAll();
     } catch (PDOException $e) {
         return [];
     }
@@ -618,7 +652,7 @@ function getRaciAssignments($entityType, $entityId) {
     $sql = "SELECT rm.raci_role, tm.id, tm.full_name, tm.role_title 
             FROM raci_matrix rm
             JOIN team_members tm ON rm.member_id = tm.id
-            WHERE rm.entity_type = :type AND rm.entity_id = :id";
+            WHERE rm.entity_type = :type AND rm.entity_id = :id AND tm.is_active = 1";
     
     try {
         $stmt = $db->prepare($sql);
@@ -670,7 +704,7 @@ function getProjectGovernanceMembers($projectId) {
         $stmt = $db->prepare("SELECT DISTINCT tm.id, tm.full_name, tm.role_title 
                               FROM team_members tm
                               JOIN project_team_roles ptr ON tm.id = ptr.member_id
-                              WHERE ptr.project_id = :pid
+                              WHERE ptr.project_id = :pid AND tm.is_active = 1
                               ORDER BY tm.full_name ASC");
         $stmt->execute(['pid' => $projectId]);
         return $stmt->fetchAll();

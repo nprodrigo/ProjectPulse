@@ -51,8 +51,13 @@ try {
         `full_name` VARCHAR(100) NOT NULL,
         `email` VARCHAR(120) NOT NULL UNIQUE,
         `role_title` VARCHAR(100) DEFAULT 'Team Member',
+        `is_active` TINYINT(1) NOT NULL DEFAULT 1,
         `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;");
+    $teamMemberColumns = $db->query("SHOW COLUMNS FROM `team_members`")->fetchAll(PDO::FETCH_COLUMN);
+    if (!in_array('is_active', $teamMemberColumns, true)) {
+        $db->exec("ALTER TABLE `team_members` ADD COLUMN `is_active` TINYINT(1) NOT NULL DEFAULT 1 AFTER `role_title`;");
+    }
     echo "<p class='info'>✓ Team Members table verified.</p>";
 
     // 3. Projects Table Column Verification & Baseline Tracking

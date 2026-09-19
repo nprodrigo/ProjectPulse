@@ -1,7 +1,6 @@
 <?php
 /**
- * Dynamic Database Connection Configuration
- * Automatically toggles between Local and Cloud environments based on HTTP Host.
+ * Database connection configuration loaded from environment variables.
  */
 
 function getDBConnection() {
@@ -17,23 +16,45 @@ function getDBConnection() {
     // Strip port numbers if running on custom ports like localhost:8080
     $domain = strtolower(explode(':', $hostHeader)[0]);
 
-    // 2. Define Environment Configurations
-    $isLocal = in_array($domain, ['localhost', '127.0.0.1', '::1']) || str_ends_with($domain, '.local') || str_ends_with($domain, '.test');
+    // 2. Load the local .env file without requiring a third-party package.
+    $envFile = dirname(__DIR__) . '/.env';
+    if (is_readable($envFile)) {
+        $envLines = file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        foreach ($envLines as $line) {
+            $line = trim($line);
+            if ($line === '' || $line[0] === '#') {
+                continue;
+            }
 
-    if ($isLocal) {
-        // --- LOCAL DEVELOPMENT ENVIRONMENT ---
-        $dbHost = 'global_db';
-        $dbPort = '3306';
-        $dbName = 'project_pulse';      // Your local database name
-        $dbUser = 'root';              // Your local MySQL username
-        $dbPass = 'rootpassword';                  // Your local MySQL password
-    } else {
-        // --- CLOUD PRODUCTION ENVIRONMENT (cPanel / Remote Host) ---
-        $dbHost = 'localhost';
-        $dbPort = '3306';
-        $dbName = 'learnitc_pm_dashboard';
-        $dbUser = 'learnitc_niroshan';
-        $dbPass = 'yXQmf2ShlyEUHnqY'; // Replace with your actual cloud DB password
+            $separator = strpos($line, '=');
+            if ($separator === false) {
+                continue;
+            }
+
+            $key = trim(substr($line, 0, $separator));
+            $value = trim(substr($line, $separator + 1));
+            if ($value !== '' && (($value[0] === '"' && substr($value, -1) === '"') || ($value[0] === "'" && substr($value, -1) === "'"))) {
+                $value = substr($value, 1, -1);
+            }
+            if ($key !== '') {
+                $_ENV[$key] = $value;
+            }
+        }
+    }
+
+    // 2. Define environment-specific variable names.
+    $isLocal = in_array($domain, ['localhost', '127.0.0.1', '::1']) || str_ends_with($domain, '.local') || str_ends_with($domain, '.test');
+    $environment = $isLocal ? 'LOCAL' : 'PRODUCTION';
+
+    $dbHost = $_ENV["DB_{$environment}_HOST"] ?? '';
+    $dbPort = $_ENV["DB_{$environment}_PORT"] ?? '3306';
+    $dbName = $_ENV["DB_{$environment}_NAME"] ?? '';
+    $dbUser = $_ENV["DB_{$environment}_USER"] ?? '';
+    $dbPass = $_ENV["DB_{$environment}_PASS"] ?? '';
+
+    if ($dbHost === '' || $dbName === '' || $dbUser === '') {
+        error_log("Database configuration is incomplete for {$environment} environment.");
+        die("Database configuration is incomplete. Set the required values in the server .env file.");
     }
 
     // 3. Establish PDO Connection

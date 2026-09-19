@@ -1,5 +1,12 @@
 <?php
-require_once __DIR__ . '/includes/header.php';
+session_start();
+require_once __DIR__ . '/config/database.php';
+require_once __DIR__ . '/includes/functions.php';
+
+if (!isset($_SESSION['user_id']) && !isset($_SESSION['member_id'])) {
+    header('Location: login.php');
+    exit;
+}
 
 // Handle Team Member Creation or Editing
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
@@ -21,10 +28,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $fullName  = trim($_POST['full_name'] ?? '');
         $email     = trim($_POST['email'] ?? '');
         $roleTitle = trim($_POST['role_title'] ?? '');
+        $isActive  = isset($_POST['is_active']) ? 1 : 0;
 
         if ($memberId > 0 && $fullName && $email) {
-            $stmt = $db->prepare("UPDATE team_members SET full_name = :name, email = :email, role_title = :role WHERE id = :id");
-            $stmt->execute(['name' => $fullName, 'email' => $email, 'role' => $roleTitle, 'id' => $memberId]);
+            $stmt = $db->prepare("UPDATE team_members SET full_name = :name, email = :email, role_title = :role, is_active = :active WHERE id = :id");
+            $stmt->execute(['name' => $fullName, 'email' => $email, 'role' => $roleTitle, 'active' => $isActive, 'id' => $memberId]);
             header("Location: team.php?msg=updated");
             exit;
         }
@@ -32,6 +40,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 }
 
 $teamMembers = getTeamMembers();
+require_once __DIR__ . '/includes/header.php';
 ?>
 
 <!-- Page Title & Header Bar -->
@@ -86,9 +95,12 @@ $teamMembers = getTeamMembers();
                   <div class="text-secondary small"><?= htmlspecialchars($member['role_title'] ?: 'Team Member') ?></div>
                 </div>
               </div>
+              <span class="badge <?= !empty($member['is_active']) ? 'bg-success-lt text-success' : 'bg-secondary-lt text-secondary' ?>">
+                <?= !empty($member['is_active']) ? 'Active' : 'Inactive' ?>
+              </span>
               <button class="btn btn-icon btn-ghost-secondary btn-sm" 
                       title="Edit Member"
-                      onclick="editMember(<?= $member['id'] ?>, '<?= htmlspecialchars(addslashes($member['full_name'])) ?>', '<?= htmlspecialchars(addslashes($member['email'])) ?>', '<?= htmlspecialchars(addslashes($member['role_title'])) ?>')">
+                      onclick="editMember(<?= $member['id'] ?>, '<?= htmlspecialchars(addslashes($member['full_name'])) ?>', '<?= htmlspecialchars(addslashes($member['email'])) ?>', '<?= htmlspecialchars(addslashes($member['role_title'])) ?>', <?= !empty($member['is_active']) ? 'true' : 'false' ?>)">
                 <i class="ti ti-edit fs-3"></i>
               </button>
             </div>
@@ -172,6 +184,10 @@ $teamMembers = getTeamMembers();
             <label class="form-label">Role Title</label>
             <input type="text" name="role_title" id="edit_role_title" class="form-control">
           </div>
+          <label class="form-check">
+            <input type="checkbox" name="is_active" id="edit_is_active" class="form-check-input">
+            <span class="form-check-label">Active member</span>
+          </label>
         </div>
 
         <div class="modal-footer">
@@ -184,11 +200,12 @@ $teamMembers = getTeamMembers();
 </div>
 
 <script>
-function editMember(id, name, email, role) {
+function editMember(id, name, email, role, isActive) {
     document.getElementById('edit_member_id').value = id;
     document.getElementById('edit_full_name').value = name;
     document.getElementById('edit_email').value = email;
     document.getElementById('edit_role_title').value = role;
+    document.getElementById('edit_is_active').checked = isActive;
 
     var editModal = new bootstrap.Modal(document.getElementById('editTeamMemberModal'));
     editModal.show();

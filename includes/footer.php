@@ -64,7 +64,7 @@
                 <label class="form-label">Project Manager</label>
                 <select name="manager_id" class="form-select">
                   <option value="">Select Manager...</option>
-                  <?php foreach (getTeamMembers() as $tm): ?>
+                  <?php foreach (getTeamMembers(true) as $tm): ?>
                     <option value="<?= $tm['id'] ?>"><?= htmlspecialchars($tm['full_name']) ?></option>
                   <?php endforeach; ?>
                 </select>

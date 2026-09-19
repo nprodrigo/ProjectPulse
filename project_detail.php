@@ -59,6 +59,7 @@ if (empty($projectGovernanceMembers)) {
 }
 
 $teamCategories = ['Strategic', 'Functional', 'Technical', 'Project Management', 'Viewer'];
+$taskStatusSequence = ['To Do', 'In Progress', 'Under Review', 'Completed'];
 ?>
 
 <!-- Print & PDF Stylesheet -->
@@ -238,6 +239,10 @@ $teamCategories = ['Strategic', 'Functional', 'Technical', 'Project Management',
           else:
             foreach ($tasks as $idx => $t): 
               $raci = getRaciAssignments('Task', $t['id']);
+              $currentStatusIndex = array_search($t['status'], $taskStatusSequence, true);
+              $nextTaskStatus = ($currentStatusIndex !== false && $currentStatusIndex < count($taskStatusSequence) - 1)
+                  ? $taskStatusSequence[$currentStatusIndex + 1]
+                  : null;
         ?>
           <tr>
             <td class="text-secondary fw-bold">
@@ -307,10 +312,10 @@ $teamCategories = ['Strategic', 'Functional', 'Technical', 'Project Management',
             <?php if (!$isReadOnly): ?>
               <td class="d-print-none">
                 <div class="btn-list flex-nowrap">
-                  <?php if ($t['status'] !== 'Completed'): ?>
-                    <button class="btn btn-sm btn-icon btn-outline-success" 
-                            title="Advance to Next Stage" 
-                            onclick="advanceTaskStage(<?= $t['id'] ?>, '<?= $t['status'] ?>')">
+                  <?php if ($nextTaskStatus !== null): ?>
+                    <button class="btn btn-sm btn-icon btn-outline-success"
+                            title="Change status to <?= htmlspecialchars($nextTaskStatus, ENT_QUOTES, 'UTF-8') ?>"
+                            onclick="advanceTaskStage(<?= $t['id'] ?>, this)">
                       <i class="ti ti-arrow-right"></i>
                     </button>
                   <?php endif; ?>
@@ -748,22 +753,13 @@ function openEditTaskModal(task, raci) {
     editModal.show();
 }
 
-function advanceTaskStage(taskId, currentStatus) {
-    let nextStatus = 'In Progress';
-    if (currentStatus === 'To Do') {
-        nextStatus = 'In Progress';
-    } else if (currentStatus === 'In Progress') {
-        nextStatus = 'Under Review';
-    } else if (currentStatus === 'Under Review') {
-        nextStatus = 'Completed';
-    } else {
-        return; // Already completed
+function advanceTaskStage(taskId, button) {
+    if (button) {
+        button.disabled = true;
     }
-
     let formData = new FormData();
     formData.append('action', 'advance_task_stage');
     formData.append('task_id', taskId);
-    formData.append('next_status', nextStatus);
     formData.append('project_id', '<?= $project['id'] ?>');
 
     fetch('api.php', {
@@ -778,10 +774,19 @@ function advanceTaskStage(taskId, currentStatus) {
         if (data.success) {
             window.location.reload();
         } else {
+            if (button) {
+                button.disabled = false;
+            }
             alert(data.message || 'Error advancing task stage.');
         }
     })
-    .catch(error => console.error('Error advancing task stage:', error));
+    .catch(error => {
+        if (button) {
+            button.disabled = false;
+        }
+        console.error('Error advancing task stage:', error);
+        alert('Unable to update the task status. Please try again.');
+    });
 }
 
 function moveTask(taskId, direction) {

@@ -347,24 +347,59 @@ switch ($action) {
     case 'advance_task_stage':
         header('Content-Type: application/json');
         $taskId     = (int)($_POST['task_id'] ?? 0);
-        $nextStatus = $_POST['next_status'] ?? '';
         $projectId  = (int)($_POST['project_id'] ?? 0);
 
         $allowedStatuses = ['To Do', 'In Progress', 'Under Review', 'Completed'];
 
-        if ($taskId > 0 && in_array($nextStatus, $allowedStatuses)) {
-            $stmt = $db->prepare("UPDATE tasks SET status = :status WHERE id = :id");
-            $stmt->execute(['status' => $nextStatus, 'id' => $taskId]);
-
-            if ($projectId > 0) {
-                syncProjectTaskProgress($projectId);
-            }
-
-            echo json_encode(['success' => true]);
+        if ($taskId <= 0) {
+            echo json_encode(['success' => false, 'message' => 'Invalid task ID.']);
             exit;
         }
-        
-        echo json_encode(['success' => false, 'message' => 'Invalid task or status progression.']);
+
+        $stmtTask = $db->prepare("SELECT project_id, status FROM tasks WHERE id = :id");
+        $stmtTask->execute(['id' => $taskId]);
+        $task = $stmtTask->fetch(PDO::FETCH_ASSOC);
+
+        if (!$task) {
+            echo json_encode(['success' => false, 'message' => 'Task not found.']);
+            exit;
+        }
+
+        $taskProjectId = (int)$task['project_id'];
+        if ($projectId > 0 && $projectId !== $taskProjectId) {
+            echo json_encode(['success' => false, 'message' => 'Task does not belong to this project.']);
+            exit;
+        }
+
+        if (!canEditProject($taskProjectId)) {
+            echo json_encode(['success' => false, 'message' => 'You do not have permission to update this task.']);
+            exit;
+        }
+
+        $currentStatusIndex = array_search($task['status'], $allowedStatuses, true);
+        if ($currentStatusIndex === false || $currentStatusIndex >= count($allowedStatuses) - 1) {
+            echo json_encode(['success' => false, 'message' => 'This task is already at its final status.']);
+            exit;
+        }
+
+        $nextStatus = $allowedStatuses[$currentStatusIndex + 1];
+        $stmt = $db->prepare("UPDATE tasks
+                              SET status = :next_status
+                              WHERE id = :id AND project_id = :project_id AND status = :current_status");
+        $stmt->execute([
+            'next_status' => $nextStatus,
+            'id' => $taskId,
+            'project_id' => $taskProjectId,
+            'current_status' => $task['status']
+        ]);
+
+        if ($stmt->rowCount() !== 1) {
+            echo json_encode(['success' => false, 'message' => 'The task status changed before this request completed. Refresh and try again.']);
+            exit;
+        }
+
+        syncProjectTaskProgress($taskProjectId);
+        echo json_encode(['success' => true, 'status' => $nextStatus]);
         exit;
 
     case 'swap_task_order':
